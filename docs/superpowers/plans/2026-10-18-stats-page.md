@@ -4,7 +4,7 @@
 
 **Goal:** Replace the stock GoatCounter dashboard at https://stats.wyrtensi.ru/ with a light static page that shows, per site, everything the shared counter keeps, plus Wy Store's release downloads.
 
-**Architecture:** A Python exporter (standard library only), run by a systemd timer every 10 minutes, reads the GoatCounter API and the GitHub releases API and writes `data/7.json`, `data/30.json`, `data/90.json`. A static page (HTML, CSS, two ES modules, no dependencies) renders those files. A `stats-web` Caddy container serves the page; edge-caddy routes `/admin*` to GoatCounter (moved under `-base-path /admin`) and everything else to `stats-web`.
+**Architecture:** A Python exporter (standard library only), run by a systemd timer every 10 minutes, reads the GoatCounter API, the GitHub releases API and new edge-caddy access-log lines (bots only: names and counts kept) and writes `data/7.json`, `data/30.json`, `data/90.json`. A static page (HTML, CSS, two ES modules, no dependencies) renders those files. A `stats-web` Caddy container serves the page; edge-caddy routes `/admin*` to GoatCounter (moved under `-base-path /admin`) and everything else to `stats-web`.
 
 **Tech Stack:** Python 3.12 (server) / 3.13 (local), `unittest`; Node 24 `node:test`; Caddy 2 (`caddy:2-alpine`); GoatCounter 2.7.0; docker-compose 1.29; systemd 255; GitHub Actions.
 
@@ -22,6 +22,7 @@ Spec: `docs/superpowers/specs/2026-10-18-stats-page-design.md`.
 - docker-compose 1.29 cannot recreate containers: apply compose changes with `docker-compose rm -sf <service> && docker-compose up -d`.
 - edge-caddy has admin off: route changes need `docker exec edge-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` and then `docker restart edge-caddy` (about 2 s for all sites). If validate fails, put the old file back before any restart.
 - Commits as `wyrtensi <wyrtensi@gmail.com>`, English messages, no Claude attribution, no emoji.
+- Bots: only bot name and request count per site per day are kept (`/opt/stats/state/bots.json`, 90 days); never IPs, paths, User-Agent strings or log lines.
 - Memory budget: stats-web `mem_limit: 32m`; goatcounter stays `96m`.
 
 ## File Structure
@@ -29,6 +30,7 @@ Spec: `docs/superpowers/specs/2026-10-18-stats-page-design.md`.
 ```
 export/stats_export.py          exporter: API client, period builder, app block, atomic write, main()
 export/tests/test_stats_export.py
+export/tests/test_bots.py
 export/tests/fixtures/*.json    recorded API responses (Task 1)
 page/index.html                 shell: header, overview, details, collected block, footer
 page/style.css                  neutral theme, light/dark tokens
@@ -37,6 +39,7 @@ page/render.js                  pure functions: data -> HTML strings, SVG charts
 page/app.js                     wiring: fetch JSON, switches, hash routing
 page/favicon.svg
 tests/page.test.mjs             render.js and i18n.js tests, static checks of index.html
+tests/bots.test.mjs             people and bots rendering
 deploy/server/docker-compose.yml   goatcounter (base path) + stats-web
 deploy/server/Caddyfile            stats-web config (CSP, caching)
 deploy/server/stats.wyrtensi.caddy edge route
@@ -545,6 +548,291 @@ git commit -m "feat(export): period files from GoatCounter and Wy Store download
 
 ---
 
+### Task 3b: Exporter — bots from the edge access logs
+
+**Files:**
+- Modify: `export/stats_export.py`
+- Test: `export/tests/test_bots.py`
+
+**Interfaces:**
+- Consumes: `SITES`, `top`, `write_atomic`, `run` (Tasks 2–3).
+- Produces:
+  - `BOTS: list[tuple[str, str, str]]` — `(name, category, lowercase substring)`, first match wins.
+  - `classify(ua: str) -> tuple[str, str] | None` — `("YandexBot", "search")`, `("other bots", "other")`, or `None` for people.
+  - `parse_line(line: str) -> tuple[str, str, str, str] | None` — `(timestamp, day, host, ua)` from a `docker logs --timestamps` line, or `None`.
+  - `update_bots(state: dict, lines: list[str], today: date) -> dict` — state `{"last": str | None, "days": {day: {host: {bot: count}}}}`.
+  - `bots_for_period(state: dict, days: int, now: datetime) -> dict[str, dict]` — `{host: {"requests": int, "list": [{"name", "category", "visits"}]}}` for every site in `SITES`.
+  - `read_log_lines(since: str | None) -> list[str]` — runs `docker logs --timestamps --since <since or 10m> edge-caddy`, stderr merged.
+  - `run(out, api, releases, now, state_path=None, read_logs=read_log_lines) -> int` — as before, plus `site["bots"]` in every period file; bot failures never fail the run.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+# export/tests/test_bots.py
+import json, sys, tempfile, unittest
+from datetime import date, datetime, timezone
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import stats_export as se
+from test_stats_export import FakeApi, fixture
+
+TS = "2026-10-18T16:07:01.123456789Z"
+
+
+def console(host, ua, ts=TS):
+    body = {"request": {"remote_ip": "203.0.113.5", "host": host, "uri": "/", "headers": {"User-Agent": [ua]}}, "status": 200}
+    return f"{ts} 2026/10/18 16:07:01.123\tINFO\thttp.log.access.log0\thandled request\t{json.dumps(body)}"
+
+
+def jsonline(host, ua, ts=TS):
+    body = {"level": "info", "logger": "http.log.access", "msg": "handled request",
+            "request": {"remote_ip": "203.0.113.5", "host": host, "headers": {"User-Agent": [ua]}}, "status": 308}
+    return f"{ts} {json.dumps(body)}"
+
+
+class Classify(unittest.TestCase):
+    def test_known_bots(self):
+        self.assertEqual(se.classify("Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)"), ("YandexBot", "search"))
+        self.assertEqual(se.classify("Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2)"), ("GPTBot", "ai"))
+        self.assertEqual(se.classify("Mozilla/5.0 (compatible; Claude-SearchBot/1.0)"), ("Claude-SearchBot", "ai"))
+        self.assertEqual(se.classify("Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)"), ("ClaudeBot", "ai"))
+
+    def test_generic_and_people(self):
+        self.assertEqual(se.classify("CGMSearchBot/1.0"), ("other bots", "other"))
+        self.assertEqual(se.classify("curl/8.5.0"), ("other bots", "other"))
+        self.assertEqual(se.classify(""), ("other bots", "other"))
+        self.assertIsNone(se.classify("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/141.0 Safari/537.36"))
+
+
+class ParseLine(unittest.TestCase):
+    def test_both_formats(self):
+        self.assertEqual(se.parse_line(console("washguide.ru", "GPTBot/1.2")), (TS, "2026-10-18", "washguide.ru", "GPTBot/1.2"))
+        self.assertEqual(se.parse_line(jsonline("wystore.ru", "x")), (TS, "2026-10-18", "wystore.ru", "x"))
+
+    def test_noise(self):
+        self.assertIsNone(se.parse_line(f"{TS} 2026/10/18 INFO tls.obtain certificate obtained"))
+        self.assertIsNone(se.parse_line("garbage"))
+
+
+class UpdateBots(unittest.TestCase):
+    def test_counts_only_our_sites_and_bots(self):
+        lines = [console("washguide.ru", "GPTBot/1.2"), console("washguide.ru", "GPTBot/1.2"),
+                 console("www.washguide.ru", "GPTBot/1.2"), console("example.shop", "GPTBot/1.2"),
+                 console("rusinternet.com", "Mozilla/5.0 Chrome/141.0")]
+        state = se.update_bots({"last": None, "days": {}}, lines, date(2026, 10, 18))
+        self.assertEqual(state["days"], {"2026-10-18": {"washguide.ru": {"GPTBot": 2}}})
+        self.assertEqual(state["last"], TS)
+
+    def test_skips_lines_already_seen(self):
+        state = {"last": TS, "days": {}}
+        later = "2026-10-18T16:09:00.000000000Z"
+        state = se.update_bots(state, [console("wystore.ru", "bingbot"), console("wystore.ru", "bingbot", later)], date(2026, 10, 18))
+        self.assertEqual(state["days"]["2026-10-18"]["wystore.ru"], {"bingbot": 1})
+        self.assertEqual(state["last"], later)
+
+    def test_drops_days_older_than_90(self):
+        state = {"last": None, "days": {"2026-07-01": {"wystore.ru": {"bingbot": 3}}}}
+        self.assertNotIn("2026-07-01", se.update_bots(state, [], date(2026, 10, 18))["days"])
+
+    def test_keeps_no_ip_or_user_agent(self):
+        state = se.update_bots({"last": None, "days": {}}, [console("washguide.ru", "GPTBot/1.2")], date(2026, 10, 18))
+        dumped = json.dumps(state)
+        self.assertNotIn("203.0.113.5", dumped)
+        self.assertNotIn("GPTBot/1.2", dumped)
+
+
+class BotsForPeriod(unittest.TestCase):
+    def test_window_and_shape(self):
+        state = {"last": None, "days": {"2026-10-18": {"washguide.ru": {"GPTBot": 2, "YandexBot": 5}},
+                                        "2026-10-01": {"washguide.ru": {"GPTBot": 100}}}}
+        out = se.bots_for_period(state, 7, datetime(2026, 10, 18, 16, 7, tzinfo=timezone.utc))
+        self.assertEqual(out["washguide.ru"], {"requests": 7, "list": [
+            {"name": "YandexBot", "category": "search", "visits": 5}, {"name": "GPTBot", "category": "ai", "visits": 2}]})
+        self.assertEqual(out["wystore.ru"], {"requests": 0, "list": []})
+
+
+class RunWithBots(unittest.TestCase):
+    def test_bots_in_files_and_state_saved(self):
+        with tempfile.TemporaryDirectory() as d:
+            out, state = Path(d), Path(d) / "bots.json"
+            code = se.run(out, FakeApi(), lambda: fixture("releases.json"),
+                          datetime(2026, 10, 18, 16, 7, tzinfo=timezone.utc), state,
+                          lambda since: [console("washguide.ru", "GPTBot/1.2")])
+            self.assertEqual(code, 0)
+            data = json.loads((out / "7.json").read_text("utf-8"))
+            site = next(s for s in data["sites"] if s["host"] == "washguide.ru")
+            self.assertEqual(site["bots"]["requests"], 1)
+            self.assertEqual(json.loads(state.read_text("utf-8"))["last"], TS)
+
+    def test_log_failure_keeps_state_and_still_exports(self):
+        def broken(since):
+            raise OSError("docker not reachable")
+        with tempfile.TemporaryDirectory() as d:
+            out, state = Path(d), Path(d) / "bots.json"
+            state.write_text(json.dumps({"last": TS, "days": {"2026-10-18": {"wystore.ru": {"bingbot": 4}}}}), "utf-8")
+            code = se.run(out, FakeApi(), lambda: [], datetime(2026, 10, 18, 16, 7, tzinfo=timezone.utc), state, broken)
+            self.assertEqual(code, 0)
+            data = json.loads((out / "7.json").read_text("utf-8"))
+            self.assertEqual(next(s for s in data["sites"] if s["host"] == "wystore.ru")["bots"]["requests"], 4)
+```
+
+- [ ] **Step 2: Run to see them fail**
+
+Run: `python -m unittest discover -s export/tests -v`
+Expected: `AttributeError: module 'stats_export' has no attribute 'classify'`.
+
+- [ ] **Step 3: Implement**
+
+Add `import re`, `import subprocess` to the imports at the top of `export/stats_export.py`, then add:
+
+```python
+# Known bots: (name, category, lowercase substring); first match wins, so the
+# more specific names come first.
+BOTS = [
+    ("Claude-SearchBot", "ai", "claude-searchbot"), ("Claude-User", "ai", "claude-user"), ("ClaudeBot", "ai", "claudebot"),
+    ("OAI-SearchBot", "ai", "oai-searchbot"), ("ChatGPT-User", "ai", "chatgpt-user"), ("GPTBot", "ai", "gptbot"),
+    ("Perplexity-User", "ai", "perplexity-user"), ("PerplexityBot", "ai", "perplexitybot"),
+    ("YandexAdditional", "ai", "yandexadditional"), ("CCBot", "ai", "ccbot"), ("Bytespider", "ai", "bytespider"),
+    ("meta-externalagent", "ai", "meta-externalagent"), ("Amazonbot", "ai", "amazonbot"),
+    ("Googlebot", "search", "googlebot"), ("YandexBot", "search", "yandex"), ("bingbot", "search", "bingbot"),
+    ("DuckDuckBot", "search", "duckduckbot"), ("Applebot", "search", "applebot"),
+    ("Baiduspider", "search", "baiduspider"), ("PetalBot", "search", "petalbot"),
+]
+CATEGORY = {name: category for name, category, _ in BOTS} | {"other bots": "other"}
+GENERIC_BOT = re.compile(r"bot|crawl|spider|slurp|scan|curl|wget|python|go-http-client|headless", re.I)
+KEEP_DAYS = 90
+
+
+def classify(ua):
+    low = (ua or "").lower()
+    for name, category, needle in BOTS:
+        if needle in low:
+            return name, category
+    if not low or GENERIC_BOT.search(low):
+        return "other bots", "other"
+    return None
+
+
+def parse_line(line):
+    """(timestamp, day, host, ua) from a `docker logs --timestamps` access line."""
+    ts, _, rest = line.partition(" ")
+    if len(ts) < 20 or ts[4] != "-":
+        return None
+    start = 0 if rest.startswith("{") else rest.find('{"request"')
+    if start < 0:
+        return None
+    try:
+        body = json.loads(rest[start:])
+    except ValueError:
+        return None
+    req = body.get("request") if isinstance(body, dict) else None
+    if not isinstance(req, dict) or "host" not in req:
+        return None
+    ua = (req.get("headers", {}).get("User-Agent") or [""])[0]
+    return ts, ts[:10], req["host"], ua
+
+
+def update_bots(state, lines, today):
+    """Add bot requests from new log lines; keep only names and counts."""
+    last = state.get("last")
+    newest = last
+    days = state.get("days", {})
+    for line in lines:
+        parsed = parse_line(line)
+        if not parsed:
+            continue
+        ts, day, host, ua = parsed
+        if last and ts <= last:
+            continue
+        if newest is None or ts > newest:
+            newest = ts
+        bot = classify(ua) if host in SITES else None
+        if bot:
+            per_site = days.setdefault(day, {}).setdefault(host, {})
+            per_site[bot[0]] = per_site.get(bot[0], 0) + 1
+    cutoff = (today - timedelta(days=KEEP_DAYS)).isoformat()
+    return {"last": newest, "days": {d: v for d, v in days.items() if d >= cutoff}}
+
+
+def bots_for_period(state, days, now):
+    first = (now - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    out = {}
+    for host in SITES:
+        counts = {}
+        for day, per_site in state.get("days", {}).items():
+            if day >= first:
+                for name, n in per_site.get(host, {}).items():
+                    counts[name] = counts.get(name, 0) + n
+        ranked = top([{"name": n, "visits": v} for n, v in counts.items()])
+        out[host] = {"requests": sum(counts.values()),
+                     "list": [{"name": x["name"], "category": CATEGORY.get(x["name"], "other"), "visits": x["visits"]}
+                              for x in ranked]}
+    return out
+
+
+def read_log_lines(since):
+    cmd = ["docker", "logs", "--timestamps", "--since", since or "10m", "edge-caddy"]
+    done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=True, timeout=60)
+    return done.stdout.splitlines()
+
+
+def load_state(path):
+    try:
+        return json.loads(Path(path).read_text("utf-8"))
+    except (OSError, ValueError):
+        return {"last": None, "days": {}}
+```
+
+Replace `run` with:
+
+```python
+def run(out, api, releases, now, state_path=None, read_logs=read_log_lines):
+    """Build all periods first; write only if every GoatCounter call succeeded.
+    GitHub and bot-log failures keep their previous data instead of failing."""
+    try:
+        files = {days: build_period(api, days, now) for days in PERIODS}
+    except (OSError, ValueError, KeyError) as err:
+        print(f"stats-export: GoatCounter failed, old files kept: {err}", file=sys.stderr)
+        return 1
+    try:
+        app = build_app(releases(), iso(now.replace(second=0, microsecond=0)))
+    except (OSError, ValueError, KeyError) as err:
+        print(f"stats-export: GitHub failed, previous app block kept: {err}", file=sys.stderr)
+        app = previous_app(out)
+    state = load_state(state_path) if state_path else {"last": None, "days": {}}
+    if state_path:
+        try:
+            state = update_bots(state, read_logs(state.get("last")), now.date())
+            write_atomic(state_path, state)
+        except (OSError, ValueError, subprocess.SubprocessError) as err:
+            print(f"stats-export: reading edge logs failed, bot counts kept: {err}", file=sys.stderr)
+    for days, data in files.items():
+        bots = bots_for_period(state, days, now)
+        for site in data["sites"]:
+            site["bots"] = bots[site["host"]]
+        data["app"] = app
+        write_atomic(out / f"{days}.json", data)
+    return 0
+```
+
+In `main`, add `parser.add_argument("--state", type=Path, default=None)` and call `run(args.out, api, fetch_releases, datetime.now(timezone.utc), args.state)`.
+
+In Task 3's `Main.test_writes_three_files_with_app`, the directory listing is still exactly `["30.json", "7.json", "90.json"]` because those tests pass no `state_path`.
+
+- [ ] **Step 4: Run all exporter tests**
+
+Run: `python -m unittest discover -s export/tests -v`
+Expected: all `OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add export/stats_export.py export/tests/test_bots.py
+git commit -m "feat(export): count bot requests per site from the edge access logs"
+```
+
+---
+
 ### Task 4: Page logic — i18n and render functions
 
 **Files:**
@@ -983,6 +1271,118 @@ git commit -m "feat(page): neutral stats page with period, language and theme sw
 
 ---
 
+### Task 5b: Page — people and bots
+
+**Files:**
+- Modify: `page/i18n.js`, `page/render.js`, `page/style.css`
+- Test: `tests/bots.test.mjs`, `tests/sample.json`
+
+**Interfaces:**
+- Consumes: `site.bots = {"requests": int, "list": [{"name", "category", "visits"}]}` (Task 3b); `overview`, `details`, `collected`, `T` (Tasks 4–5).
+- Produces: new keys in both languages: `people`, `botRequests`, `bots`, `catSearch`, `catAi`, `catOther`, `cBots`.
+
+- [ ] **Step 1: Add bots to the sample and write the failing tests**
+
+In `tests/sample.json`, add to the `rusinternet.com` site
+`"bots":{"requests":57,"list":[{"name":"YandexBot","category":"search","visits":40},{"name":"GPTBot","category":"ai","visits":17}]}`
+and to the other two sites `"bots":{"requests":0,"list":[]}`.
+
+```js
+// tests/bots.test.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { T } from '../page/i18n.js';
+import * as R from '../page/render.js';
+
+const data = JSON.parse(await readFile(new URL('./sample.json', import.meta.url), 'utf8'));
+
+test('cards show people and bot requests separately', () => {
+  const html = R.overview(data, 'en');
+  assert.ok(html.includes(T.en.people) && html.includes(T.en.botRequests));
+  assert.match(html, /57/);
+});
+
+test('details list bots with their category', () => {
+  const html = R.details(data.sites[0], null, 'ru');
+  assert.ok(html.includes(T.ru.bots));
+  assert.ok(html.includes('YandexBot') && html.includes(T.ru.catSearch));
+  assert.ok(html.includes('GPTBot') && html.includes(T.ru.catAi));
+});
+
+test('collected block mentions what is kept for bots', () => {
+  assert.ok(R.collected('en').includes(T.en.cBots));
+});
+
+test('files without bots still render', () => {
+  const old = structuredClone(data);
+  for (const s of old.sites) delete s.bots;
+  assert.doesNotThrow(() => R.overview(old, 'en'));
+  assert.doesNotThrow(() => R.details(old.sites[0], null, 'en'));
+});
+```
+
+Run: `node --test tests/` — Expected: FAIL (`T.en.people` is undefined).
+
+- [ ] **Step 2: Add the strings to `page/i18n.js`**
+
+In `T.ru`:
+`people: 'людей', botRequests: 'запросов ботов', bots: 'Боты', catSearch: 'поиск', catAi: 'ИИ', catOther: 'прочие', cBots: 'для ботов — только имя и число запросов',`
+
+In `T.en`:
+`people: 'people', botRequests: 'bot requests', bots: 'Bots', catSearch: 'search', catAi: 'AI', catOther: 'other', cBots: 'for bots, only the name and the number of requests',`
+
+- [ ] **Step 3: Update `page/render.js`**
+
+In `overview`, replace the line with `class="big"` and `class="unit"` by:
+
+```js
+  <span class="big">${fmt(s.visits, lang)}</span><span class="unit">${t.people}</span>
+  <span class="bots">${fmt(s.bots?.requests ?? 0, lang)} ${t.botRequests}</span>
+```
+
+In `details`, change the empty check at the top to:
+
+```js
+  if (!site.visits && !site.bots?.requests) return `${head}${appHtml}<p class="empty">${t.noData}</p>`;
+```
+
+and after the `${list(t.systems, site.systems, lang)}` line add:
+
+```js
+${list(t.bots, site.bots?.list ?? [], lang,
+  (b) => `${b.name} · ${({ search: t.catSearch, ai: t.catAi, other: t.catOther })[b.category] ?? t.catOther}`)}
+```
+
+(`list` already renders the `other` entry as `t.other` without calling the label function.)
+
+In `collected`, inside the first column right after `<ul class="yes">...</ul>`, add:
+
+```js
+<p class="note">${t.cBots}</p>
+```
+
+Add to `page/style.css`:
+
+```css
+.bots{grid-column:1/-1;color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+.note{color:var(--muted);font-size:14px;margin:8px 0 0}
+```
+
+- [ ] **Step 4: Run all page tests**
+
+Run: `node --test tests/`
+Expected: all pass, including Task 4's tests (the `overview` test still finds `12`, the `details` test still finds every list title).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add page/i18n.js page/render.js page/style.css tests/bots.test.mjs tests/sample.json
+git commit -m "feat(page): people and bot requests per site, bots by category"
+```
+
+---
+
 ### Task 6: Server configuration files
 
 **Files:**
@@ -1199,7 +1599,7 @@ After=docker.service
 [Service]
 Type=oneshot
 # Through edge-caddy on this same server; the token never leaves the machine.
-ExecStart=/usr/bin/python3 /usr/local/bin/stats-export --out /opt/stats/page/data --token-file /etc/stats/token --base https://stats.wyrtensi.ru/admin
+ExecStart=/usr/bin/python3 /usr/local/bin/stats-export --out /opt/stats/page/data --token-file /etc/stats/token --state /opt/stats/state/bots.json --base https://stats.wyrtensi.ru/admin
 Nice=10
 ```
 
@@ -1414,6 +1814,7 @@ printf 'restrict,command="/usr/local/bin/stats-deploy" %s\n' "$(cat /root/deploy
 chown stdeploy: /home/stdeploy/.ssh/authorized_keys; chmod 600 /home/stdeploy/.ssh/authorized_keys
 install -d -m 755 -o stdeploy -g stdeploy /opt/stats/page /opt/stats/page/releases
 install -d -m 755 /opt/stats/page/data
+install -d -m 700 /opt/stats/state
 rm /root/stats-deploy.sh /root/deploy_key.pub
 ```
 
@@ -1489,5 +1890,5 @@ Merge rusinternet, wystore, washguide PRs; watch their deploys (all jobs green).
 
 ## Self-review notes
 
-- Spec coverage: architecture (Tasks 6, 8), token (Task 1), data file and app block (Tasks 2–3), page sections, language, theme, no external requests, stale note (Tasks 4–5), errors (Task 3 tests, Task 5 error element), deployment (Tasks 7–8), testing (Tasks 2–7), dashboard private (Task 8 Step 5).
+- Spec coverage: bots (Tasks 3b, 5b; `--state` in Task 6; state dir in Task 8); architecture (Tasks 6, 8), token (Task 1), data file and app block (Tasks 2–3), page sections, language, theme, no external requests, stale note (Tasks 4–5), errors (Task 3 tests, Task 5 error element), deployment (Tasks 7–8), testing (Tasks 2–7), dashboard private (Task 8 Step 5).
 - Names used across tasks: `site_of`, `top`, `write_atomic`, `build_period`, `build_app`, `fetch_releases`, `run`, `main`; `overview`, `details`, `appBlock`, `collected`, `updated`, `sparkline`, `bars`, `fmt`; `T`, `pickLang`; container `stats-web`, user `stdeploy`, secret `STATS_DEPLOY_KEY`.
