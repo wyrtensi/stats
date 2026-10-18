@@ -37,7 +37,8 @@ export function overview(data, lang) {
   const t = T[lang];
   return data.sites.map((s) => `<a class="card" href="#${esc(s.host)}" data-site="${esc(s.host)}">
   <span class="host">${esc(s.host)}</span>
-  <span class="big">${fmt(s.visits, lang)}</span><span class="unit">${t.visits}</span>
+  <span class="big">${fmt(s.visits, lang)}</span><span class="unit">${t.people}</span>
+  <span class="bots">${fmt(s.bots?.requests ?? 0, lang)} ${t.botRequests}</span>
   ${sparkline(s.daily)}
 </a>`).join('');
 }
@@ -56,7 +57,7 @@ export function details(site, app, lang) {
   const t = T[lang];
   const head = `<a class="back" href="#">${t.back}</a><h2>${esc(site.host)}</h2>`;
   const appHtml = app && app.site === site.host ? appBlock(app, lang) : '';
-  if (!site.visits) return `${head}${appHtml}<p class="empty">${t.noData}</p>`;
+  if (!site.visits && !site.bots?.requests) return `${head}${appHtml}<p class="empty">${t.noData}</p>`;
   return `${head}<p class="total"><span class="big">${fmt(site.visits, lang)}</span> ${t.visits}</p>
 ${bars(site.daily)}
 ${appHtml}
@@ -66,6 +67,8 @@ ${list(t.referrers, site.referrers, lang)}
 ${list(t.countries, site.countries, lang)}
 ${list(t.browsers, site.browsers, lang)}
 ${list(t.systems, site.systems, lang)}
+${list(t.bots, site.bots?.list ?? [], lang,
+  (b) => `${b.name} · ${({ search: t.catSearch, ai: t.catAi, other: t.catOther })[b.category] ?? t.catOther}`)}
 </div>`;
 }
 
@@ -73,7 +76,8 @@ export function collected(lang) {
   const t = T[lang];
   const li = (keys) => keys.map((k) => `<li>${t[k]}</li>`).join('');
   return `<h2>${t.collectedTitle}</h2>
-<div class="cols"><div><h3>${t.keptTitle}</h3><ul class="yes">${li(['cPage', 'cReferrer', 'cCountry', 'cBrowser', 'cSystem'])}</ul></div>
+<div class="cols"><div><h3>${t.keptTitle}</h3><ul class="yes">${li(['cPage', 'cReferrer', 'cCountry', 'cBrowser', 'cSystem'])}</ul>
+<p class="note">${t.cBots}</p></div>
 <div><h3>${t.notKeptTitle}</h3><ul class="no">${li(['nCookies', 'nIp', 'nSize', 'nLanguage', 'nVisits'])}</ul></div></div>
 <p>${t.counterNote} <a href="https://github.com/arp242/goatcounter">GoatCounter</a> · <a href="https://github.com/wyrtensi/stats">${t.source}</a></p>`;
 }

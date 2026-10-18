@@ -35,3 +35,5 @@ button{font:inherit;color:inherit;background:none;border:1px solid var(--line);b
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
 .yes li::marker{content:"+  "}.no li::marker{content:"–  "}
 .empty,.error,footer{color:var(--muted)}footer{padding-top:32px;padding-bottom:40px;font-size:14px}
+.bots{grid-column:1/-1;color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+.note{color:var(--muted);font-size:14px;margin:8px 0 0}

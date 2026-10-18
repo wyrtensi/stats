@@ -10,6 +10,7 @@ export const T = {
     cPage: 'страница', cReferrer: 'источник перехода', cCountry: 'страна', cBrowser: 'браузер', cSystem: 'система',
     nCookies: 'cookie', nIp: 'IP-адреса', nSize: 'размер экрана', nLanguage: 'язык', nVisits: 'отдельные визиты',
     counterNote: 'Счётчик — GoatCounter на нашем сервере.', source: 'Исходный код страницы',
+    people: 'людей', botRequests: 'запросов ботов', bots: 'Боты', catSearch: 'поиск', catAi: 'ИИ', catOther: 'прочие', cBots: 'для ботов — только имя и число запросов',
     updated: 'Обновлено', stale: 'данные могут быть устаревшими', back: '← Все сайты', theme: 'Тема', lang: 'English'
   },
   en: {
@@ -22,6 +23,7 @@ export const T = {
     cPage: 'page', cReferrer: 'referrer', cCountry: 'country', cBrowser: 'browser', cSystem: 'system',
     nCookies: 'cookies', nIp: 'IP addresses', nSize: 'screen size', nLanguage: 'language', nVisits: 'individual visits',
     counterNote: 'The counter is GoatCounter on our own server.', source: 'Source code of this page',
+    people: 'people', botRequests: 'bot requests', bots: 'Bots', catSearch: 'search', catAi: 'AI', catOther: 'other', cBots: 'for bots, only the name and the number of requests',
     updated: 'Updated', stale: 'the data may be stale', back: '← All sites', theme: 'Theme', lang: 'Русский'
   }
 };
