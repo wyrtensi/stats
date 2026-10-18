@@ -1,0 +1,11 @@
+{"generated":"2026-10-18T16:07:00Z","period":{"days":7,"start":"2026-10-12","end":"2026-10-18"},
+ "collected":["page","referrer","country","browser","system"],
+ "sites":[
+  {"host":"rusinternet.com","visits":12,"daily":[{"day":"2026-10-17","visits":5},{"day":"2026-10-18","visits":7}],
+   "pages":[{"path":"/install/android/","title":"<b>Android</b>","visits":9}],
+   "referrers":[{"name":"yandex.ru","visits":4}],"countries":[{"name":"Russia","visits":12}],
+   "browsers":[{"name":"Chrome","visits":10},{"name":"other","visits":2}],"systems":[{"name":"Android","visits":8}]},
+  {"host":"wystore.ru","visits":0,"daily":[],"pages":[],"referrers":[],"countries":[],"browsers":[],"systems":[]},
+  {"host":"washguide.ru","visits":3,"daily":[{"day":"2026-10-18","visits":3}],"pages":[],"referrers":[],"countries":[],"browsers":[],"systems":[]}],
+ "app":{"site":"wystore.ru","repo":"wyrtensi/wystore","latest":{"version":"v0.4.1","published":"2026-10-18","downloads":33,
+   "url":"https://github.com/wyrtensi/wystore/releases/tag/v0.4.1"},"total_downloads":812,"releases":30,"fetched":"2026-10-18T16:07:00Z"}}
