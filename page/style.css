@@ -27,7 +27,7 @@ button{font:inherit;color:inherit;background:none;border:0;border-radius:999px;p
 .seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
 .seg .sep{color:var(--muted);opacity:.5;user-select:none}
 .ghost{color:var(--muted)}.ghost:hover{color:var(--fg);background:var(--soft)}
-.gh{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;color:var(--fg);text-decoration:none;white-space:nowrap;border:1px solid var(--line);border-radius:999px}
+.gh{display:inline-flex;align-items:center;gap:6px;height:37px;padding:0 12px;color:var(--fg);font-size:13px;font-weight:500;text-decoration:none;white-space:nowrap;border:1px solid var(--line);border-radius:11px}
 .gh:hover,.gh:focus-visible{background:var(--soft);border-color:var(--muted)}
 
 /* Intro */
@@ -115,7 +115,7 @@ footer{padding-top:28px;padding-bottom:48px;font-size:14px;color:var(--muted)}
   header.top{padding-top:20px}
   .controls{display:contents}
   .brand{margin-right:auto}
-  .gh{padding:9px 8px}
+  .gh{width:37px;padding:0;justify-content:center}
   .gh span{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .seg{order:3;width:100%;justify-content:space-between}
   .seg button{padding:5px 10px}
