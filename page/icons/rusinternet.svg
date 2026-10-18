@@ -1,19 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
   <title id="title">Доступ в российский интернет</title>
   <defs>
-    <clipPath id="globe"><circle cx="32" cy="32" r="24"/></clipPath>
+    <clipPath id="band"><rect x="15" y="11" width="34" height="18" rx="2.5"/></clipPath>
   </defs>
-  <circle cx="32" cy="32" r="29" fill="#edf3ff"/>
-  <g clip-path="url(#globe)">
-    <path fill="#fff" d="M8 8h48v16H8z"/>
-    <path fill="#1d4ed8" d="M8 24h48v16H8z"/>
-    <path fill="#dc2626" d="M8 40h48v16H8z"/>
-    <g fill="none" stroke="#172554" stroke-opacity=".28" stroke-width="1.25">
-      <ellipse cx="32" cy="32" rx="11" ry="24"/>
-      <path d="M32 8v48M9.5 23.5c12.5 4.2 32.5 4.2 45 0M8 32h48M9.5 40.5c12.5-4.2 32.5-4.2 45 0"/>
-    </g>
+  <rect x="9" y="5" width="46" height="54" rx="7" fill="#fff" stroke="#2563eb" stroke-width="4"/>
+  <g clip-path="url(#band)">
+    <path fill="#fff" d="M15 11h34v6H15z"/>
+    <path fill="#1d4ed8" d="M15 17h34v6H15z"/>
+    <path fill="#dc2626" d="M15 23h34v6H15z"/>
   </g>
-  <circle cx="32" cy="32" r="24" fill="none" stroke="#fff" stroke-opacity=".72" stroke-width="1"/>
-  <circle cx="32" cy="32" r="26.5" fill="none" stroke="#b9c9e8" stroke-width="1"/>
-  <circle cx="32" cy="32" r="24" fill="none" stroke="#315ebd" stroke-width="2"/>
+  <rect x="15" y="11" width="34" height="18" rx="2.5" fill="none" stroke="#cbd5e1" stroke-width="1"/>
+  <path d="M16 37h20" stroke="#93b4f5" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="m30 46 5.5 5.5L47 39" fill="none" stroke="#12a463" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
