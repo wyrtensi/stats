@@ -17,7 +17,7 @@ Spec: `docs/superpowers/specs/2026-10-18-stats-page-design.md`.
 - No inline `<script>` or `style=` in `page/`; scripts are same-origin `type="module"`.
 - Sites, in this order: `rusinternet.com`, `wystore.ru`, `washguide.ru`. A path belongs to a site when it equals `/<host>` or starts with `/<host>/`.
 - Periods: 7, 30, 90 days; default 30. Lists keep the top 10; the rest is one `"other"` entry (pages have no "other").
-- Collected (shown on the page): page, referrer, country, browser, system. Not collected: cookies, IP addresses, screen size, language, individual visits.
+- Collected (shown on the page): for each view the page, time, referrer, country, browser language, browser, system (individual pageviews are stored; the page shows only the summary). Not collected: cookies, IP addresses, screen size, region. (Changed 2026-10-18 by the operator; Task 5c applies it.)
 - Server: 192.144.58.198, root over `ssh -i "D:/hub/workspace/Infra/secrets/.ssh/wyvdsinaru" root@192.144.58.198`. Never print or copy keys or the API token.
 - docker-compose 1.29 cannot recreate containers: apply compose changes with `docker-compose rm -sf <service> && docker-compose up -d`.
 - edge-caddy has admin off: route changes need `docker exec edge-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` and then `docker restart edge-caddy` (about 2 s for all sites). If validate fails, put the old file back before any restart.
@@ -1390,6 +1390,210 @@ Expected: all pass, including Task 4's tests (the `overview` test still finds `1
 ```bash
 git add page/i18n.js page/render.js page/style.css tests/bots.test.mjs tests/sample.json
 git commit -m "feat(page): people and bot requests per site, bots by category"
+```
+
+---
+
+### Task 5c: Languages, and a friendlier, nicer page
+
+The operator turned on two more things in GoatCounter: browser language and
+individual pageviews (each view stored with its time; still no IP, no
+cookies). The operator also asked for a page that an ordinary person
+understands at a glance and that is pleasant to look at. This task does both.
+
+**Files:**
+- Modify: `export/stats_export.py`, `export/tests/test_stats_export.py`, `export/tests/fixtures/languages.json` (create)
+- Modify: `page/i18n.js`, `page/render.js`, `page/app.js`, `page/style.css`, `page/index.html`
+- Test: `tests/page.test.mjs`, `tests/bots.test.mjs`, `tests/sample.json`, new `tests/friendly.test.mjs`
+
+**Interfaces:**
+- Consumes: everything from Tasks 2–5b.
+- Produces:
+  - exporter: `BREAKDOWNS` gains `"languages": "languages"`; every site in a period file gets `"languages": [{"name", "visits"}]` (top 10 plus "other"); `COLLECTED` becomes `["page", "time", "referrer", "country", "language", "browser", "system"]`.
+  - page: `export const SITE_INFO = { "rusinternet.com": {...}, "wystore.ru": {...}, "washguide.ru": {...} }` in `render.js` with `color` (a CSS custom property name) and `about` (i18n key); `export function summary(data, lang): string`; `export function pct(n, total): string` (`"75%"`, `"<1%"` for a non-zero share under 1%, `"0%"` for zero).
+
+#### Content requirements (exact wording is in the i18n step below)
+
+1. **Summary line** at the top, under the lead: total people over the period and the most visited site, for example "За последние 30 дней на наши сайты зашли 15 человек. Больше всего — на rusinternet.com." Russian numerals agree (`1 человек`, `2 человека`, `5 человек`; `1 день`, `2 дня`, `5 дней`). If the total is 0: "За последние 30 дней посещений пока нет."
+2. **Cards:** a colour dot and the host, a one-line description of the site under it, the number of people (large), "людей" / "people" with the right plural, bot requests in plain words ("и 57 запросов от роботов поисковиков и ИИ"), a sparkline in the site's colour, and "Подробнее →" / "Details →".
+3. **Period switch** reads "7 дней · 30 дней · 90 дней" / "7 days · 30 days · 90 days", with an `aria-label` from i18n.
+4. **Details:** site title with its dot and description; the people total; the daily chart; each list with a heading and a one-line plain hint under it:
+   - Pages — "какие страницы открывали"
+   - Referrers ("Откуда пришли") — "поисковики и сайты, где была ссылка; «напрямую» — набрали адрес или открыли закладку"
+   - Countries — "по адресу подключения; сам адрес не сохраняется"
+   - Languages ("Языки") — "язык, выбранный в браузере"
+   - Browsers, Systems — no hint needed
+   - Bots ("Роботы") — "поисковики и ИИ-сервисы, которые читают сайт; людьми не считаются"
+   Each row shows the count and the share: "9 · 75%". The share is of the site's people for the period (`site.visits`); for robots it is of the site's bot requests.
+   Names: an empty or `"unknown"` name shows as "не определено" / "unknown"; `"other"` shows as "другие" / "others"; an empty referrer shows as "напрямую" / "direct". Bot categories read "поиск", "ИИ", "прочие".
+5. **Daily chart:** bars in the site's colour with rounded tops, at most 80% of the chart height, the first and last date under the chart, and a `<title>` per bar with the formatted date and count. An empty period shows the no-data line instead of a chart.
+6. **What we collect** reads, in plain words:
+   - Kept, for each view: page, time, referrer, country, browser language, browser, system. Bots: only the bot's name and number of requests.
+   - Not kept: cookies, IP addresses, screen size.
+   - One line: "Каждый просмотр хранится отдельно, но здесь показана только сводка."
+7. **Look:** light theme by default when the system is light; soft card shadows instead of borders (borders stay in dark theme where shadows don't read); more spacing; large numbers 40px; system font; the three site colours are muted (a blue, a violet, a warm amber) with dark-theme variants; everything else stays neutral grey. At 360 px wide: one card per row, lists in one column, header controls wrap under the brand, no horizontal scroll.
+8. **Robustness fixes from earlier reviews** (ledger minors), all in this task:
+   - list bars: `isolation:isolate` on `.list li`, bar at `z-index:0`, text above it;
+   - `decodeURIComponent` of the hash wrapped in try/catch (bad hash → overview only);
+   - period loads: ignore a response that is not for the period currently selected;
+   - error text re-rendered in the current language on language switch;
+   - stored period accepted only if it is 7, 30 or 90;
+   - bar-chart `<title>` values escaped and formatted; app link used only if it starts with `https://github.com/`;
+   - an unparseable `generated` counts as stale;
+   - `pickLang` compares the whole primary subtag (`uk-UA` → `uk`), not the first two letters.
+
+- [ ] **Step 1: Exporter — languages and collected list (TDD)**
+
+Record `export/tests/fixtures/languages.json` on the server exactly like the other stats fixtures (Task 1, Step 3, with `languages` in the loop). Add to `export/tests/test_stats_export.py`:
+
+```python
+class Languages(unittest.TestCase):
+    def test_languages_and_collected(self):
+        out = se.build_period(FakeApi(), 30, NOW)
+        self.assertEqual(out["collected"], ["page", "time", "referrer", "country", "language", "browser", "system"])
+        self.assertIn("languages", out["sites"][0])
+        self.assertTrue(all({"name", "visits"} <= set(x) for x in out["sites"][0]["languages"]))
+```
+
+Update `test_shape_and_sites` to expect the new `collected` value, and `test_site_without_paths_is_empty` to include `"languages": []`. Also stop replacing empty names with `"unknown"` in `build_site` (keep `s["name"]` as is): the page decides that an empty referrer means "direct" and an empty name elsewhere means "unknown"; add a test that an empty name from the API stays `""`. Run `python -W error -m unittest discover -s export/tests -v`, see the failures, then change `COLLECTED`, `BREAKDOWNS` and `empty_site` in `export/stats_export.py`. Run again: all pass. Commit `feat(export): browser languages per site`.
+
+- [ ] **Step 2: Page tests first**
+
+Add `"languages":[{"name":"Russian","visits":10},{"name":"","visits":2}]` and a referrer `{"name":"","visits":3}` to the `rusinternet.com` site in `tests/sample.json` (and `"languages":[]` to the others; update `collected` to the new list). Create `tests/friendly.test.mjs`:
+
+```js
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { T, pickLang } from '../page/i18n.js';
+import * as R from '../page/render.js';
+
+const data = JSON.parse(await readFile(new URL('./sample.json', import.meta.url), 'utf8'));
+
+test('summary names the total and the busiest site, with Russian plurals', () => {
+  const ru = R.summary(data, 'ru');
+  assert.match(ru, /15 человек/);
+  assert.ok(ru.includes('rusinternet.com'));
+  const one = structuredClone(data); one.sites = [{ ...data.sites[0], visits: 1 }, { ...data.sites[1], visits: 0 }, { ...data.sites[2], visits: 0 }];
+  assert.match(R.summary(one, 'ru'), /1 человек\b/);
+  const none = structuredClone(data); for (const s of none.sites) s.visits = 0;
+  assert.ok(R.summary(none, 'ru').includes(T.ru.summaryNone.replace('{days}', '7 дней')));
+});
+
+test('shares', () => {
+  assert.equal(R.pct(9, 12), '75%');
+  assert.equal(R.pct(1, 300), '<1%');
+  assert.equal(R.pct(0, 12), '0%');
+});
+
+test('cards carry site colour, description and Details link', () => {
+  const html = R.overview(data, 'ru');
+  assert.ok(html.includes(T.ru[R.SITE_INFO['wystore.ru'].about]));
+  assert.ok(html.includes(T.ru.more));
+  assert.match(html, /data-color="site-1"/);
+});
+
+test('plain names: unknown, other, direct', () => {
+  const html = R.details(data.sites[0], null, 'ru');
+  assert.ok(html.includes(T.ru.unknown) && html.includes(T.ru.direct) && html.includes(T.ru.other));
+  assert.ok(!/>unknown</.test(html));
+  assert.ok(html.includes(T.ru.languages) && html.includes(T.ru.hintLanguages));
+  assert.match(html, /9 · 75%/);
+});
+
+test('collected block matches the counter settings', () => {
+  const html = R.collected('ru');
+  for (const k of ['cPage', 'cTime', 'cReferrer', 'cCountry', 'cLanguage', 'cBrowser', 'cSystem', 'cBots', 'nCookies', 'nIp', 'nSize', 'summaryOnly'])
+    assert.ok(html.includes(T.ru[k]), k);
+});
+
+test('pickLang uses the whole primary subtag', () => {
+  assert.equal(pickLang('uk-UA', null), 'ru');
+  assert.equal(pickLang('ukl', null), 'en');
+  assert.equal(pickLang('bem', null), 'en');
+});
+
+test('unparseable generated counts as stale', () => {
+  assert.ok(R.updated('not a date', new Date(), 'en').includes(T.en.stale));
+});
+
+test('app link only to GitHub', () => {
+  const bad = structuredClone(data.app); bad.latest.url = 'javascript:alert(1)';
+  assert.ok(!R.appBlock(bad, 'en').includes('javascript:'));
+});
+```
+
+Update the Task 4 and 5b tests whose expectations change because of the new wording (`T.en.visits` → `T.en.people`, removed keys `nLanguage`, `nVisits`); keep each test's intent. Run `node --test`: the new tests fail.
+
+- [ ] **Step 3: i18n**
+
+Replace and add keys in both languages (both languages must keep identical key sets). Russian values:
+
+```
+lead: 'Сколько людей заходит на наши сайты. Без cookie и без IP-адресов.',
+summary: 'За последние {days} на наши сайты зашли {people}. Больше всего — на {site}.',
+summaryNone: 'За последние {days} посещений пока нет.',
+peopleOne: 'человек', peopleFew: 'человека', peopleMany: 'человек',
+dayOne: 'день', dayFew: 'дня', dayMany: 'дней',
+botsLine: 'и {n} запросов от роботов поисковиков и ИИ',
+more: 'Подробнее →', periodLabel: 'Период',
+aboutRusinternet: 'Сертификаты Минцифры', aboutWystore: 'Магазин приложений для Android', aboutWashguide: 'Справочник старых стиральных машин',
+pages: 'Страницы', hintPages: 'какие страницы открывали',
+referrers: 'Откуда пришли', hintReferrers: 'поисковики и сайты, где была ссылка; «напрямую» — набрали адрес или открыли закладку',
+countries: 'Страны', hintCountries: 'по адресу подключения; сам адрес не сохраняется',
+languages: 'Языки', hintLanguages: 'язык, выбранный в браузере',
+browsers: 'Браузеры', systems: 'Системы',
+bots: 'Роботы', hintBots: 'поисковики и ИИ-сервисы, которые читают сайт; людьми не считаются',
+other: 'другие', unknown: 'не определено', direct: 'напрямую',
+cPage: 'страница', cTime: 'время', cReferrer: 'откуда пришли', cCountry: 'страна', cLanguage: 'язык браузера', cBrowser: 'браузер', cSystem: 'система',
+cBots: 'для роботов — только имя и число запросов',
+nCookies: 'cookie', nIp: 'IP-адреса', nSize: 'размер экрана',
+keptTitle: 'Сохраняется для каждого просмотра', notKeptTitle: 'Не сохраняется',
+summaryOnly: 'Каждый просмотр хранится отдельно, но здесь показана только сводка.',
+```
+
+English values:
+
+```
+lead: 'How many people visit our sites. No cookies and no IP addresses.',
+summary: 'In the last {days}, {people} visited our sites. Most went to {site}.',
+summaryNone: 'No visits in the last {days} yet.',
+peopleOne: 'person', peopleFew: 'people', peopleMany: 'people',
+dayOne: 'day', dayFew: 'days', dayMany: 'days',
+botsLine: 'and {n} requests from search and AI robots',
+more: 'Details →', periodLabel: 'Period',
+aboutRusinternet: 'Russian root certificates', aboutWystore: 'An Android app store', aboutWashguide: 'A guide to old washing machines',
+pages: 'Pages', hintPages: 'which pages were opened',
+referrers: 'Where people came from', hintReferrers: 'search engines and sites with a link; “direct” means typed or bookmarked',
+countries: 'Countries', hintCountries: 'from the connection address; the address itself is not kept',
+languages: 'Languages', hintLanguages: 'the language set in the browser',
+browsers: 'Browsers', systems: 'Systems',
+bots: 'Robots', hintBots: 'search engines and AI services reading the site; not counted as people',
+other: 'others', unknown: 'unknown', direct: 'direct',
+cPage: 'page', cTime: 'time', cReferrer: 'where they came from', cCountry: 'country', cLanguage: 'browser language', cBrowser: 'browser', cSystem: 'system',
+cBots: 'for robots, only the name and the number of requests',
+nCookies: 'cookies', nIp: 'IP addresses', nSize: 'screen size',
+keptTitle: 'Kept for each view', notKeptTitle: 'Not kept',
+summaryOnly: 'Each view is stored separately, but this page shows only the summary.',
+```
+
+Remove `nLanguage`, `nVisits`, `visits`, `botRequests`, `people` (replaced by the plural keys) and any other key no longer used. Add `export function plural(n, one, few, many)` to `i18n.js` (Russian rules: 1, 21, 31… → one; 2–4, 22–24… → few; else many; English: 1 → one, else many).
+
+- [ ] **Step 4: render.js, app.js, style.css, index.html**
+
+Implement the content requirements above. Constraints: pure functions in `render.js`, all data escaped, no inline styles (site colour goes through a `data-color="site-1|site-2|site-3"` attribute that CSS maps to `--site-1…3`), no external resources, CSP unchanged. Period buttons get their text from i18n in `render()`. Apply every robustness fix from the list.
+
+Visual direction: light background `#f6f6f3`, cards white with `box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06)`, radius 16px, padding 22px, gap 20px; site colours `--site-1:#4f7cac` (rusinternet), `--site-2:#8a6fb0` (wystore), `--site-3:#c08a3e` (washguide) with lighter dark-theme variants (`#7fa3cc`, `#ab95cf`, `#d6a861`); numbers 40px semibold with tabular figures; hints 13px muted; max content width 1040px.
+
+- [ ] **Step 5: Run everything**
+
+`node --test` and `python -W error -m unittest discover -s export/tests`: all pass, output pristine. Serve `page/` with sample data as in Task 5 and confirm every asset answers 200; the controller does the visual check.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add page tests export
+git commit -m "feat(page): plain-language, friendlier stats page with languages"
 ```
 
 ---

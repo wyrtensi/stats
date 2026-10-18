@@ -18,9 +18,11 @@ neutral "wyrtensi" style, showing exactly what is collected and nothing more.
 - One GoatCounter site, vhost `stats.wyrtensi.ru`. Every page records its path
   with the host in front: `/rusinternet.com/install/android/`, `/wystore.ru/en/`,
   `/washguide.ru/m/...`.
-- Collected: sessions (8 h unique-visitor hash), referrer, browser and system
-  (from User-Agent; the header itself is not stored), country. Not collected:
-  individual pageviews, screen size, region, language. No cookies, no IP stored.
+- Collected: sessions (8 h unique-visitor hash), individual pageviews (each
+  view with its time), referrer, browser and system (from User-Agent; the
+  header itself is not stored), country, browser language. Not collected:
+  screen size, region. No cookies, no IP stored. (Individual pageviews and
+  language were turned on by the operator on 2026-10-18.)
 - The dashboard is public ("Anyone"); settings need a login.
 - Each site's edge route passes only `/stats/count` and `/stats/count.js` to
   `goatcounter:8080`, after `uri strip_prefix /stats`, with
@@ -93,7 +95,7 @@ One file per period, `data/7.json`, `data/30.json`, `data/90.json`:
 {
   "generated": "2026-10-18T16:10:00Z",
   "period": { "days": 30, "start": "2026-09-19", "end": "2026-10-18" },
-  "collected": ["page", "referrer", "country", "browser", "system"],
+  "collected": ["page", "time", "referrer", "country", "language", "browser", "system"],
   "sites": [
     {
       "host": "rusinternet.com",
@@ -103,7 +105,8 @@ One file per period, `data/7.json`, `data/30.json`, `data/90.json`:
       "referrers": [{ "name": "yandex.ru", "visits": 200 }],
       "countries": [{ "name": "Russia", "visits": 900 }],
       "browsers": [{ "name": "Chrome", "visits": 700 }],
-      "systems": [{ "name": "Android", "visits": 600 }]
+      "systems": [{ "name": "Android", "visits": 600 }],
+      "languages": [{ "name": "Russian", "visits": 800 }]
     }
   ],
   "app": {
@@ -123,7 +126,9 @@ One file per period, `data/7.json`, `data/30.json`, `data/90.json`:
   `/<host>/` or equals `/<host>`; the prefix is cut off in `pages`.
 - Per site and period the exporter collects the site's path IDs from
   `/api/v0/paths`, then calls `/stats/total`, `/stats/hits` (daily) and
-  `/stats/{toprefs,locations,browsers,systems}` with `include_paths`.
+  `/stats/{toprefs,locations,browsers,systems,languages}` with `include_paths`.
+  Empty names are kept as `""`; the page shows an empty referrer as "direct"
+  and any other empty or "unknown" name as "unknown".
   Lists keep the top 10; the rest is summed into "other".
 - "visits" is the count the GoatCounter API returns for these endpoints, the
   same number the stock dashboard shows as visits (unique per 8-hour session).
@@ -187,9 +192,16 @@ logs, which already exist for the three sites.
   latest version with its release date (linked to the release), downloads of
   that version, and downloads of all versions, labelled "all time" because
   GitHub has no per-period numbers.
-- **What we collect:** a fixed block listing what is kept (page, referrer,
-  country, browser, system) and what is not (cookies, IP addresses, screen
-  size, language, individual visits), with a link to GoatCounter's source.
+- **What we collect:** a fixed block listing what is kept for each view
+  (page, time, referrer, country, browser language, browser, system; for bots
+  only the name and request count), what is not (cookies, IP addresses, screen
+  size), and that each view is stored but the page shows only the summary,
+  with a link to GoatCounter's source.
+- **Plain language and look** (operator request, 2026-10-18): a one-line
+  summary at the top, a description under each site name, plain list titles
+  with one-line hints, counts with shares, period switch in words, a muted
+  colour per site, soft card shadows, light theme by default on light
+  systems, one column on phones. Details in plan Task 5c.
 - **Footer:** "Updated <time>" from `generated`; if the file is older than
   30 minutes, the time is shown with a note that the data may be stale.
 - Language: from `navigator.language` (ru, uk, be, kk default to Russian, the
