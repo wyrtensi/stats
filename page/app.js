@@ -44,6 +44,8 @@ function render() {
   $('lang').textContent = t.lang;
   $('theme').setAttribute('aria-label', t.theme);
   $('theme').title = t.theme;
+  $('github').setAttribute('aria-label', t.github);
+  $('github').title = t.github;
   $('period').setAttribute('aria-label', t.periodLabel);
   for (const b of $('period').querySelectorAll('button')) {
     const days = Number(b.dataset.days);

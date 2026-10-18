@@ -28,7 +28,7 @@ export const T = {
     updated: 'Обновлено', stale: 'данные могут быть устаревшими', loadError: 'Не удалось загрузить данные.',
     chartLabel: 'Посещения по дням', avgLine: 'В среднем {avg} {people} в день · больше всего {peak} — {date}',
     noVisitsPeriod: 'За период посещений нет', lastDays: 'последние {days}',
-    back: '← Все сайты', theme: 'Тема', lang: 'English'
+    back: '← Все сайты', theme: 'Тема', github: 'Исходный код на GitHub', lang: 'English'
   },
   en: {
     lead: 'How many people visit our sites. No cookies and no IP addresses.',
@@ -58,7 +58,7 @@ export const T = {
     updated: 'Updated', stale: 'the data may be stale', loadError: 'Could not load the data.',
     chartLabel: 'Visits by day', avgLine: 'On average {avg} {people} a day · peak {peak} on {date}',
     noVisitsPeriod: 'No visits in this period', lastDays: 'last {days}',
-    back: '← All sites', theme: 'Theme', lang: 'Русский'
+    back: '← All sites', theme: 'Theme', github: 'Source code on GitHub', lang: 'Русский'
   }
 };
 
