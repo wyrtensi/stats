@@ -61,4 +61,10 @@ test('index.html loads only same-origin resources and no inline code', async () 
   assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/.test(html), 'no inline scripts');
   assert.ok(!/\sstyle=/.test(html), 'no style attributes');
   assert.match(html, /<script type="module" src="\/app\.js"><\/script>/);
+  const gh = html.match(/<a [^>]*id="github"[^>]*>/)?.[0] ?? '';
+  assert.match(gh, /href="https:\/\/github\.com\/wyrtensi\/stats"/);
+  assert.match(gh, /rel="noopener"/);
+  assert.match(gh, /target="_blank"/);
+  assert.match(gh, /aria-label="[^"]+"/);
+  assert.ok(html.indexOf('id="github"') < html.indexOf('id="lang"'), 'GitHub link sits before the language button');
 });
