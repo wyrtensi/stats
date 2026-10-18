@@ -1,4 +1,4 @@
-import contextlib, io, json, os, sys, tempfile, unittest
+import contextlib, http.client, io, json, os, sys, tempfile, unittest
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -168,6 +168,27 @@ class Main(unittest.TestCase):
             self.assertEqual(self.run_main(Path(d), FakeApi(), no_github), 0)
             data = json.loads((Path(d) / "7.json").read_text("utf-8"))
             self.assertEqual(data["app"], {"site": "wystore.ru", "fetched": "old"})
+
+    def assert_previous_app_kept(self, releases):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "30.json").write_text(json.dumps({"app": {"site": "wystore.ru", "fetched": "old"}}), "utf-8")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                self.assertEqual(se.run(Path(d), FakeApi(), releases, NOW), 0)
+            self.assertEqual(sorted(os.listdir(d)), ["30.json", "7.json", "90.json"])
+            data = json.loads((Path(d) / "7.json").read_text("utf-8"))
+            self.assertEqual(data["app"], {"site": "wystore.ru", "fetched": "old"})
+            return err.getvalue()
+
+    def test_github_returning_an_object_keeps_previous_app(self):
+        message = self.assert_previous_app_kept(lambda: {"message": "API rate limit exceeded"})
+        self.assertIn("GitHub failed", message)
+
+    def test_github_truncated_body_keeps_previous_app(self):
+        def truncated():
+            raise http.client.IncompleteRead(b"")
+        message = self.assert_previous_app_kept(truncated)
+        self.assertIn("IncompleteRead", message)
 
 
 if __name__ == "__main__":

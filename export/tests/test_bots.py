@@ -26,6 +26,13 @@ class Classify(unittest.TestCase):
         self.assertEqual(se.classify("Mozilla/5.0 (compatible; Claude-SearchBot/1.0)"), ("Claude-SearchBot", "ai"))
         self.assertEqual(se.classify("Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)"), ("ClaudeBot", "ai"))
 
+    def test_yandex_robots_but_not_the_yandex_browser(self):
+        self.assertEqual(se.classify("Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)"), ("YandexBot", "search"))
+        self.assertEqual(se.classify("Mozilla/5.0 (compatible; YandexMetrika/2.0; +http://yandex.com/bots yabs01)"), ("YandexBot", "search"))
+        self.assertEqual(se.classify("Mozilla/5.0 (compatible; YandexAdditional/3.0; +http://yandex.com/bots)"), ("YandexAdditional", "ai"))
+        self.assertIsNone(se.classify("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 YaBrowser/25.8.0.0 Safari/537.36"))
+        self.assertIsNone(se.classify("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/138.0 Mobile Safari/537.36 YandexSearch/25.1"))
+
     def test_generic_and_people(self):
         self.assertEqual(se.classify("CGMSearchBot/1.0"), ("other bots", "other"))
         self.assertEqual(se.classify("curl/8.5.0"), ("other bots", "other"))
@@ -37,6 +44,17 @@ class ParseLine(unittest.TestCase):
     def test_both_formats(self):
         self.assertEqual(se.parse_line(console("washguide.ru", "GPTBot/1.2")), (TS, "2026-10-18", "washguide.ru", "GPTBot/1.2"))
         self.assertEqual(se.parse_line(jsonline("wystore.ru", "x")), (TS, "2026-10-18", "wystore.ru", "x"))
+
+    def test_unexpected_shapes_do_not_raise(self):
+        def line(req):
+            return f"{TS} {json.dumps({'request': req})}"
+        self.assertEqual(se.parse_line(line({"host": "wystore.ru", "headers": None})), (TS, "2026-10-18", "wystore.ru", ""))
+        self.assertEqual(se.parse_line(line({"host": "wystore.ru", "headers": ["x"]})), (TS, "2026-10-18", "wystore.ru", ""))
+        self.assertEqual(se.parse_line(line({"host": "wystore.ru", "headers": {"User-Agent": "GPTBot"}})), (TS, "2026-10-18", "wystore.ru", ""))
+        self.assertEqual(se.parse_line(line({"host": "wystore.ru", "headers": {"User-Agent": []}})), (TS, "2026-10-18", "wystore.ru", ""))
+        self.assertEqual(se.parse_line(line({"host": "wystore.ru", "headers": {"User-Agent": [None]}})), (TS, "2026-10-18", "wystore.ru", ""))
+        self.assertIsNone(se.parse_line(line({"host": None, "headers": {}})))
+        self.assertIsNone(se.parse_line(line({"host": ["wystore.ru"], "headers": {}})))
 
     def test_noise(self):
         self.assertIsNone(se.parse_line(f"{TS} 2026/10/18 INFO tls.obtain certificate obtained"))
@@ -104,3 +122,54 @@ class RunWithBots(unittest.TestCase):
             self.assertEqual(code, 0)
             data = json.loads((out / "7.json").read_text("utf-8"))
             self.assertEqual(next(s for s in data["sites"] if s["host"] == "wystore.ru")["bots"]["requests"], 4)
+
+
+class ReadLogLines(unittest.TestCase):
+    def test_decodes_utf8_with_replacement(self):
+        seen = {}
+
+        def fake_run(cmd, **kwargs):
+            seen.update(kwargs)
+            return type("Done", (), {"stdout": "a" + chr(10) + "b" + chr(10)})()
+        original = se.subprocess.run
+        se.subprocess.run = fake_run
+        try:
+            self.assertEqual(se.read_log_lines(None), ["a", "b"])
+        finally:
+            se.subprocess.run = original
+        self.assertEqual(seen.get("encoding"), "utf-8")
+        self.assertEqual(seen.get("errors"), "replace")
+        self.assertNotIn("text", seen)
+
+
+class RunSurvivesLogProblems(unittest.TestCase):
+    NOW = datetime(2026, 10, 18, 16, 7, tzinfo=timezone.utc)
+
+    def run_with(self, lines_or_exc):
+        def read_logs(since):
+            if isinstance(lines_or_exc, Exception):
+                raise lines_or_exc
+            return lines_or_exc
+        with tempfile.TemporaryDirectory() as d:
+            out, state = Path(d), Path(d) / "bots.json"
+            state.write_text(json.dumps({"last": None, "days": {"2026-10-18": {"wystore.ru": {"bingbot": 4}}}}), "utf-8")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code = se.run(out, FakeApi(), lambda: [], self.NOW, state, read_logs)
+            files = sorted(p.name for p in out.glob("*.json") if p.name != "bots.json")
+            kept = json.loads((out / "7.json").read_text("utf-8"))
+            return code, files, kept, err.getvalue()
+
+    def test_line_with_null_headers(self):
+        line = f"{TS} " + json.dumps({"request": {"host": "wystore.ru", "headers": None}})
+        code, files, data, _ = self.run_with([line])
+        self.assertEqual(code, 0)
+        self.assertEqual(files, ["30.json", "7.json", "90.json"])
+
+    def test_unexpected_error_in_log_reading(self):
+        code, files, data, err = self.run_with(RuntimeError("boom"))
+        self.assertEqual(code, 0)
+        self.assertEqual(files, ["30.json", "7.json", "90.json"])
+        self.assertEqual(next(s for s in data["sites"] if s["host"] == "wystore.ru")["bots"]["requests"], 4)
+        self.assertIn("RuntimeError", err)
+        self.assertIn("boom", err)

@@ -12,6 +12,17 @@ test('cards show people and bot requests separately', () => {
   assert.ok(html.includes(T.en.botsMany.replace('{n}', '57')));
 });
 
+test('the robots line speaks of robots, not only search and AI', () => {
+  for (const key of ['botsOne', 'botsFew', 'botsMany']) {
+    assert.ok(!/ИИ|AI|search|поиск/i.test(T.ru[key] + T.en[key]), key);
+  }
+  assert.equal(T.ru.botsOne, 'и {n} запрос от роботов');
+  assert.equal(T.ru.botsFew, 'и {n} запроса от роботов');
+  assert.equal(T.ru.botsMany, 'и {n} запросов от роботов');
+  assert.equal(T.en.botsOne, 'and {n} request from robots');
+  assert.equal(T.en.botsMany, 'and {n} requests from robots');
+});
+
 test('details list bots with their category', () => {
   const html = R.details(data.sites[0], null, 'ru');
   assert.ok(html.includes(T.ru.bots));

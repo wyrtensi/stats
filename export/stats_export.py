@@ -177,7 +177,7 @@ BOTS = [
     ("Perplexity-User", "ai", "perplexity-user"), ("PerplexityBot", "ai", "perplexitybot"),
     ("YandexAdditional", "ai", "yandexadditional"), ("CCBot", "ai", "ccbot"), ("Bytespider", "ai", "bytespider"),
     ("meta-externalagent", "ai", "meta-externalagent"), ("Amazonbot", "ai", "amazonbot"),
-    ("Googlebot", "search", "googlebot"), ("YandexBot", "search", "yandex"), ("bingbot", "search", "bingbot"),
+    ("Googlebot", "search", "googlebot"), ("YandexBot", "search", "yandex.com/bots"), ("bingbot", "search", "bingbot"),
     ("DuckDuckBot", "search", "duckduckbot"), ("Applebot", "search", "applebot"),
     ("Baiduspider", "search", "baiduspider"), ("PetalBot", "search", "petalbot"),
 ]
@@ -209,9 +209,11 @@ def parse_line(line):
     except ValueError:
         return None
     req = body.get("request") if isinstance(body, dict) else None
-    if not isinstance(req, dict) or "host" not in req:
+    if not isinstance(req, dict) or not isinstance(req.get("host"), str):
         return None
-    ua = (req.get("headers", {}).get("User-Agent") or [""])[0]
+    headers = req.get("headers")
+    agents = headers.get("User-Agent") if isinstance(headers, dict) else None
+    ua = agents[0] if isinstance(agents, list) and agents and isinstance(agents[0], str) else ""
     return ts, ts[:10], req["host"], ua
 
 
@@ -255,7 +257,8 @@ def bots_for_period(state, days, now):
 
 def read_log_lines(since):
     cmd = ["docker", "logs", "--timestamps", "--since", since or "10m", "edge-caddy"]
-    done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=True, timeout=60)
+    done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8", errors="replace",
+                          check=True, timeout=60)
     return done.stdout.splitlines()
 
 
@@ -276,16 +279,16 @@ def run(out, api, releases, now, state_path=None, read_logs=read_log_lines):
         return 1
     try:
         app = build_app(releases(), iso(now.replace(second=0, microsecond=0)))
-    except (OSError, ValueError, KeyError) as err:
-        print(f"stats-export: GitHub failed, previous app block kept: {err}", file=sys.stderr)
+    except Exception as err:
+        print(f"stats-export: GitHub failed, previous app block kept: {type(err).__name__}: {err}", file=sys.stderr)
         app = previous_app(out)
     state = load_state(state_path) if state_path else {"last": None, "days": {}}
     if state_path:
         try:
             state = update_bots(state, read_logs(state.get("last")), now.date())
             write_atomic(state_path, state)
-        except (OSError, ValueError, subprocess.SubprocessError) as err:
-            print(f"stats-export: reading edge logs failed, bot counts kept: {err}", file=sys.stderr)
+        except Exception as err:
+            print(f"stats-export: reading edge logs failed, bot counts kept: {type(err).__name__}: {err}", file=sys.stderr)
     for days, data in files.items():
         bots = bots_for_period(state, days, now)
         for site in data["sites"]:
