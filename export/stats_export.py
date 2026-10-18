@@ -52,8 +52,9 @@ def write_atomic(path, data):
 
 
 PERIODS = (7, 30, 90)
-COLLECTED = ["page", "referrer", "country", "browser", "system"]
-BREAKDOWNS = {"referrers": "toprefs", "countries": "locations", "browsers": "browsers", "systems": "systems"}
+COLLECTED = ["page", "time", "referrer", "country", "language", "browser", "system"]
+BREAKDOWNS = {"referrers": "toprefs", "countries": "locations", "languages": "languages",
+              "browsers": "browsers", "systems": "systems"}
 RELEASES_URL = "https://api.github.com/repos/wyrtensi/wystore/releases?per_page=100&page={page}"
 
 
@@ -101,7 +102,7 @@ def site_paths(api):
 
 def empty_site(host):
     return {"host": host, "visits": 0, "daily": [], "pages": [],
-            "referrers": [], "countries": [], "browsers": [], "systems": []}
+            "referrers": [], "countries": [], "languages": [], "browsers": [], "systems": []}
 
 
 def build_site(api, host, paths, start, end):
@@ -117,7 +118,9 @@ def build_site(api, host, paths, start, end):
             "pages": sorted(pages, key=lambda x: x["visits"], reverse=True)[:10]}
     for key, endpoint in BREAKDOWNS.items():
         stats = api.get("/api/v0/stats/" + endpoint, {**base, "limit": 100})["stats"]
-        site[key] = top([{"name": s["name"] or "unknown", "visits": s["count"]} for s in stats])
+        # Names stay as GoatCounter gives them ("" for a direct referrer); the
+        # page decides how to show empty and unknown names.
+        site[key] = top([{"name": s["name"], "visits": s["count"]} for s in stats])
     return site
 
 

@@ -66,10 +66,10 @@ class BuildPeriod(unittest.TestCase):
         out = se.build_period(FakeApi(), 30, NOW)
         self.assertEqual(out["generated"], "2026-10-18T16:07:00Z")
         self.assertEqual(out["period"], {"days": 30, "start": "2026-09-19", "end": "2026-10-18"})
-        self.assertEqual(out["collected"], ["page", "referrer", "country", "browser", "system"])
+        self.assertEqual(out["collected"], ["page", "time", "referrer", "country", "language", "browser", "system"])
         self.assertEqual([s["host"] for s in out["sites"]], list(se.SITES))
         site = out["sites"][0]
-        for key in ("visits", "daily", "pages", "referrers", "countries", "browsers", "systems"):
+        for key in ("visits", "daily", "pages", "referrers", "countries", "languages", "browsers", "systems"):
             self.assertIn(key, site)
         self.assertTrue(all(not p["path"].startswith("/rusinternet.com") for p in site["pages"]))
 
@@ -90,7 +90,23 @@ class BuildPeriod(unittest.TestCase):
                 raise AssertionError("no stats calls expected")
         out = se.build_period(NoPaths(), 30, NOW)
         self.assertEqual(out["sites"][1], {"host": "wystore.ru", "visits": 0, "daily": [], "pages": [],
-                                           "referrers": [], "countries": [], "browsers": [], "systems": []})
+                                           "referrers": [], "countries": [], "languages": [], "browsers": [],
+                                           "systems": []})
+
+
+class Languages(unittest.TestCase):
+    def test_languages_and_collected(self):
+        out = se.build_period(FakeApi(), 30, NOW)
+        self.assertEqual(out["collected"], ["page", "time", "referrer", "country", "language", "browser", "system"])
+        self.assertIn("languages", out["sites"][0])
+        self.assertTrue(all({"name", "visits"} <= set(x) for x in out["sites"][0]["languages"]))
+
+    def test_empty_name_stays_empty(self):
+        # The recorded toprefs answer has one direct referrer with name "";
+        # the page, not the exporter, decides how to call it.
+        out = se.build_period(FakeApi(), 30, NOW)
+        self.assertEqual(out["sites"][0]["referrers"], [{"name": "", "visits": 1}])
+        self.assertEqual(out["sites"][0]["languages"], [{"name": "(unknown)", "visits": 1}])
 
 
 def release(tag, published, apk, other=0, draft=False, pre=False):
