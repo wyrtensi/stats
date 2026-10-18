@@ -4,6 +4,8 @@ runs on the server from stats-export.timer."""
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -164,8 +166,106 @@ def previous_app(out):
         return None
 
 
-def run(out, api, releases, now):
-    """Build all periods first; write only if every GoatCounter call succeeded."""
+# Known bots: (name, category, lowercase substring); first match wins, so the
+# more specific names come first.
+BOTS = [
+    ("Claude-SearchBot", "ai", "claude-searchbot"), ("Claude-User", "ai", "claude-user"), ("ClaudeBot", "ai", "claudebot"),
+    ("OAI-SearchBot", "ai", "oai-searchbot"), ("ChatGPT-User", "ai", "chatgpt-user"), ("GPTBot", "ai", "gptbot"),
+    ("Perplexity-User", "ai", "perplexity-user"), ("PerplexityBot", "ai", "perplexitybot"),
+    ("YandexAdditional", "ai", "yandexadditional"), ("CCBot", "ai", "ccbot"), ("Bytespider", "ai", "bytespider"),
+    ("meta-externalagent", "ai", "meta-externalagent"), ("Amazonbot", "ai", "amazonbot"),
+    ("Googlebot", "search", "googlebot"), ("YandexBot", "search", "yandex"), ("bingbot", "search", "bingbot"),
+    ("DuckDuckBot", "search", "duckduckbot"), ("Applebot", "search", "applebot"),
+    ("Baiduspider", "search", "baiduspider"), ("PetalBot", "search", "petalbot"),
+]
+CATEGORY = {name: category for name, category, _ in BOTS} | {"other bots": "other"}
+GENERIC_BOT = re.compile(r"bot|crawl|spider|slurp|scan|curl|wget|python|go-http-client|headless", re.I)
+KEEP_DAYS = 90
+
+
+def classify(ua):
+    low = (ua or "").lower()
+    for name, category, needle in BOTS:
+        if needle in low:
+            return name, category
+    if not low or GENERIC_BOT.search(low):
+        return "other bots", "other"
+    return None
+
+
+def parse_line(line):
+    """(timestamp, day, host, ua) from a `docker logs --timestamps` access line."""
+    ts, _, rest = line.partition(" ")
+    if len(ts) < 20 or ts[4] != "-":
+        return None
+    start = 0 if rest.startswith("{") else rest.find('{"request"')
+    if start < 0:
+        return None
+    try:
+        body = json.loads(rest[start:])
+    except ValueError:
+        return None
+    req = body.get("request") if isinstance(body, dict) else None
+    if not isinstance(req, dict) or "host" not in req:
+        return None
+    ua = (req.get("headers", {}).get("User-Agent") or [""])[0]
+    return ts, ts[:10], req["host"], ua
+
+
+def update_bots(state, lines, today):
+    """Add bot requests from new log lines; keep only names and counts."""
+    last = state.get("last")
+    newest = last
+    days = state.get("days", {})
+    for line in lines:
+        parsed = parse_line(line)
+        if not parsed:
+            continue
+        ts, day, host, ua = parsed
+        if last and ts <= last:
+            continue
+        if newest is None or ts > newest:
+            newest = ts
+        bot = classify(ua) if host in SITES else None
+        if bot:
+            per_site = days.setdefault(day, {}).setdefault(host, {})
+            per_site[bot[0]] = per_site.get(bot[0], 0) + 1
+    cutoff = (today - timedelta(days=KEEP_DAYS)).isoformat()
+    return {"last": newest, "days": {d: v for d, v in days.items() if d >= cutoff}}
+
+
+def bots_for_period(state, days, now):
+    first = (now - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    out = {}
+    for host in SITES:
+        counts = {}
+        for day, per_site in state.get("days", {}).items():
+            if day >= first:
+                for name, n in per_site.get(host, {}).items():
+                    counts[name] = counts.get(name, 0) + n
+        ranked = top([{"name": n, "visits": v} for n, v in counts.items()])
+        out[host] = {"requests": sum(counts.values()),
+                     "list": [{"name": x["name"], "category": CATEGORY.get(x["name"], "other"), "visits": x["visits"]}
+                              for x in ranked]}
+    return out
+
+
+def read_log_lines(since):
+    cmd = ["docker", "logs", "--timestamps", "--since", since or "10m", "edge-caddy"]
+    done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=True, timeout=60)
+    return done.stdout.splitlines()
+
+
+def load_state(path):
+    try:
+        return json.loads(Path(path).read_text("utf-8"))
+    except (OSError, ValueError):
+        return {"last": None, "days": {}}
+
+
+def run(out, api, releases, now, state_path=None, read_logs=read_log_lines):
+    """Build all periods first; write only if every GoatCounter call succeeded.
+    GitHub and bot-log failures keep their previous data instead of failing."""
     try:
         files = {days: build_period(api, days, now) for days in PERIODS}
     except (OSError, ValueError, KeyError) as err:
@@ -176,7 +276,17 @@ def run(out, api, releases, now):
     except (OSError, ValueError, KeyError) as err:
         print(f"stats-export: GitHub failed, previous app block kept: {err}", file=sys.stderr)
         app = previous_app(out)
+    state = load_state(state_path) if state_path else {"last": None, "days": {}}
+    if state_path:
+        try:
+            state = update_bots(state, read_logs(state.get("last")), now.date())
+            write_atomic(state_path, state)
+        except (OSError, ValueError, subprocess.SubprocessError) as err:
+            print(f"stats-export: reading edge logs failed, bot counts kept: {err}", file=sys.stderr)
     for days, data in files.items():
+        bots = bots_for_period(state, days, now)
+        for site in data["sites"]:
+            site["bots"] = bots[site["host"]]
         data["app"] = app
         write_atomic(out / f"{days}.json", data)
     return 0
@@ -188,9 +298,10 @@ def main(argv):
     parser.add_argument("--base", required=True)
     parser.add_argument("--token-file", type=Path, required=True)
     parser.add_argument("--host", default=None, help="Host header, only when --base is a container address")
+    parser.add_argument("--state", type=Path, default=None)
     args = parser.parse_args(argv)
     api = Api(args.base, args.token_file.read_text("utf-8").strip(), args.host)
-    return run(args.out, api, fetch_releases, datetime.now(timezone.utc))
+    return run(args.out, api, fetch_releases, datetime.now(timezone.utc), args.state)
 
 
 if __name__ == "__main__":
