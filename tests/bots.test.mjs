@@ -9,7 +9,7 @@ const data = JSON.parse(await readFile(new URL('./sample.json', import.meta.url)
 test('cards show people and bot requests separately', () => {
   const html = R.overview(data, 'en');
   assert.ok(html.includes(T.en.peopleMany));
-  assert.ok(html.includes(T.en.botsLine.replace('{n}', '57')));
+  assert.ok(html.includes(T.en.botsMany.replace('{n}', '57')));
 });
 
 test('details list bots with their category', () => {

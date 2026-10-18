@@ -6,16 +6,18 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 export const fmt = (n, lang) => new Intl.NumberFormat(lang === 'ru' ? 'ru-RU' : 'en-US').format(n);
 
 // Each site's colour is a data-color attribute that CSS maps to --site-1..3;
-// `about` is the i18n key of the one-line description.
+// `about` is the i18n key of the one-line description; `icon` is a same-origin file.
 export const SITE_INFO = {
-  'rusinternet.com': { color: 'site-1', about: 'aboutRusinternet' },
-  'wystore.ru': { color: 'site-2', about: 'aboutWystore' },
-  'washguide.ru': { color: 'site-3', about: 'aboutWashguide' }
+  'rusinternet.com': { color: 'site-1', about: 'aboutRusinternet', icon: '/icons/rusinternet.svg' },
+  'wystore.ru': { color: 'site-2', about: 'aboutWystore', icon: '/icons/wystore.png' },
+  'washguide.ru': { color: 'site-3', about: 'aboutWashguide', icon: '/icons/washguide.svg' }
 };
 
 const info = (host) => (Object.hasOwn(SITE_INFO, host) ? SITE_INFO[host] : null);
 const colorAttr = (host) => (info(host) ? ` data-color="${info(host).color}"` : '');
 const about = (host, lang) => (info(host) ? T[lang][info(host).about] : '');
+const iconTag = (host, size, extra = '') => (info(host)
+  ? `<img class="site-icon${extra}" src="${esc(info(host).icon)}" alt="" width="${size}" height="${size}">` : '');
 
 const counted = (n, lang, key) => {
   const t = T[lang];
@@ -80,9 +82,22 @@ export function bars(daily, lang, w = 640, h = 160) {
 // One list: heading, plain hint, rows with count and share of `total`.
 // GoatCounter names: "" is a direct visit for referrers and unknown elsewhere;
 // "unknown" and "(unknown)" are unknown; "other" is the exporter's remainder.
+// Entries that read as unknown are merged into one before ranking and shares.
 function list({ title, hint, items, total, lang, label = (x) => x.name, empty = 'unknown' }) {
   if (!items.length) return '';
   const t = T[lang];
+  const isUnknown = (n) => n === 'unknown' || n === '(unknown)' || (n === '' && empty === 'unknown');
+  const merged = [];
+  let unknown = null;
+  for (const x of items) {
+    if (!isUnknown(x.name)) merged.push(x);
+    else if (unknown) unknown.visits += x.visits;
+    else merged.push(unknown = { name: 'unknown', visits: x.visits });
+  }
+  if (unknown) {
+    const rest = merged.filter((x) => x.name !== 'other');
+    items = [...rest.sort((a, b) => b.visits - a.visits), ...merged.filter((x) => x.name === 'other')];
+  }
   const max = Math.max(1, ...items.map((x) => x.visits));
   const rows = items.map((x) => {
     const name = x.name === 'other' ? t.other
@@ -95,16 +110,21 @@ function list({ title, hint, items, total, lang, label = (x) => x.name, empty = 
   return `<section class="list"><h3>${title}</h3>${hint ? `<p class="hint">${hint}</p>` : ''}<ol>${rows}</ol></section>`;
 }
 
+const botsText = (n, lang) => {
+  const t = T[lang];
+  return plural(n, t.botsOne, t.botsFew, t.botsMany, lang).replace('{n}', () => fmt(n, lang));
+};
+
 export function overview(data, lang) {
   const t = T[lang];
   return data.sites.map((s) => {
     const bots = s.bots?.requests ?? 0;
     const desc = about(s.host, lang);
     return `<a class="card" href="#${esc(s.host)}" data-site="${esc(s.host)}"${colorAttr(s.host)}>
-  <span class="host"><span class="dot"></span>${esc(s.host)}</span>
+  <span class="host">${iconTag(s.host, 28)}${esc(s.host)}</span>
   ${desc ? `<span class="about">${desc}</span>` : ''}
   <span class="count"><span class="big">${fmt(s.visits, lang)}</span> <span class="unit">${plural(s.visits, t.peopleOne, t.peopleFew, t.peopleMany, lang)}</span></span>
-  ${bots ? `<span class="bots">${t.botsLine.replace('{n}', () => fmt(bots, lang))}</span>` : ''}
+  ${bots ? `<span class="bots">${botsText(bots, lang)}</span>` : ''}
   ${sparkline(s.daily)}
   <span class="more">${t.more}</span>
 </a>`;
@@ -127,7 +147,7 @@ export function appBlock(app, lang) {
 export function details(site, app, lang) {
   const t = T[lang];
   const desc = about(site.host, lang);
-  const head = `<a class="back" href="#">${t.back}</a><h2 class="site-title"><span class="dot"></span>${esc(site.host)}</h2>`
+  const head = `<a class="back" href="#">${t.back}</a><h2 class="site-title">${iconTag(site.host, 36, ' site-icon-lg')}${esc(site.host)}</h2>`
     + (desc ? `<p class="site-about">${desc}</p>` : '');
   const appHtml = app && app.site === site.host ? appBlock(app, lang) : '';
   const robots = list({

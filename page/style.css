@@ -38,8 +38,8 @@ button{font:inherit;color:inherit;background:none;border:0;border-radius:999px;p
   box-shadow:var(--shadow);text-decoration:none;transition:box-shadow .2s,transform .2s}
 .card:hover{box-shadow:var(--shadow-hover);transform:translateY(-1px)}
 .card[aria-current="true"]{outline:2px solid var(--c);outline-offset:-1px}
-.host{display:flex;align-items:center;gap:8px;font-weight:600;overflow-wrap:anywhere}
-.dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--c)}
+.host{display:flex;align-items:center;gap:10px;font-weight:600;overflow-wrap:anywhere}
+.site-icon{border-radius:8px;flex:none;vertical-align:middle}.site-icon-lg{border-radius:10px}
 .about{font-size:14px;color:var(--muted)}
 .count{display:flex;align-items:baseline;gap:8px;margin-top:16px}
 .big{font-size:40px;line-height:1.1;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
@@ -53,7 +53,6 @@ button{font:inherit;color:inherit;background:none;border:0;border-radius:999px;p
 .details{margin-top:28px;padding:28px;background:var(--surface);border:1px solid var(--edge);border-radius:16px;box-shadow:var(--shadow)}
 .back{display:inline-block;margin-bottom:14px;font-size:14px;color:var(--muted);text-decoration:none}.back:hover{color:var(--fg)}
 .site-title{display:flex;align-items:center;gap:10px;margin:0;font-size:24px;font-weight:650;overflow-wrap:anywhere}
-.site-title .dot{width:12px;height:12px}
 .site-about{margin:2px 0 0;color:var(--muted)}
 .total{display:flex;align-items:baseline;gap:8px;margin:24px 0 8px;color:var(--muted)}.total .big{color:var(--fg)}
 .empty{margin:24px 0;color:var(--muted)}

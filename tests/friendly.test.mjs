@@ -42,7 +42,7 @@ test('cards carry site colour, description and Details link', () => {
   assert.ok(html.includes(T.ru.more));
   assert.match(html, /data-color="site-1"/);
   assert.deepEqual(Object.values(R.SITE_INFO).map((s) => s.color), ['site-1', 'site-2', 'site-3']);
-  assert.ok(html.includes(T.ru.botsLine.replace('{n}', '57')));
+  assert.ok(html.includes(T.ru.botsMany.replace('{n}', '57')));
   assert.match(html, />3<\/span> <span class="unit">человека</);
 });
 
