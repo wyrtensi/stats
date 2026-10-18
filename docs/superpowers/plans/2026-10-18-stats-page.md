@@ -1670,6 +1670,128 @@ git commit -m "feat(page): site icons, agreeing robot-request plurals, one unkno
 
 ---
 
+### Task 5e: Clearer, nicer charts
+
+The operator asked for charts that are easier to read and nicer to look at.
+Today the details chart is bare bars with the first and last date; the card
+sparkline is a thin line. The data has every day of the period, zeros
+included (`site.daily`, oldest first).
+
+**Files:**
+- Modify: `page/render.js`, `page/app.js`, `page/style.css`, `page/i18n.js`, `page/index.html`
+- Modify: `deploy/server/Caddyfile` (one header line, see item 6)
+- Test: `tests/charts.test.mjs` (new); update existing tests only where the markup they check changes, keeping their intent
+
+**Interfaces:**
+- Consumes: `bars`, `sparkline`, `SITE_INFO`, `plural`, `fmt`, `T`, `details`, `overview` (Tasks 4–5d).
+- Produces:
+  - `export function niceMax(max: number): number` — smallest of 1, 2, 5 × 10^k that is ≥ `max` (0 → 1).
+  - `export function dayLabel(day: string, lang): string` — `"18 окт"` / `"18 Oct"` (UTC date).
+  - `export function bars(daily, lang, host): string` — the details chart (new signature; replaces the old one).
+  - `export function sparkline(daily, host): string` — the card chart (new signature).
+  - `export function chartFacts(daily, lang): string` — the line under the chart.
+  - In `app.js`, a single tooltip element `#tip` (added to `index.html`) driven by pointer and focus events on `[data-day]` bars.
+
+#### What the charts must show
+
+1. **Details chart** (`bars`):
+   - SVG `viewBox="0 0 720 220"`, drawn area 680 × 170 with room for axis labels on the left and dates below; `preserveAspectRatio="none"` is not allowed (text would stretch) — use a fixed viewBox and let CSS scale width to 100%.
+   - Three horizontal grid lines at 0, `niceMax/2`, `niceMax`, thin and muted, each labelled on the left with its value (`fmt`).
+   - One bar per day in the site colour (`data-color` as before), gap 30% of a slot, top corners rounded (radius 3; the existing overshoot trick is fine). A zero day shows a 2-unit stub in the muted grid colour, so empty days are visible as days.
+   - Date labels under the axis: 7 days → every day; 30 days → every 7th day counting back from the last day, plus the last day; 90 days → every 14th day the same way. Labels never overlap at 360 px wide (font size 11 in viewBox units is enough for these steps).
+   - Every bar is a `<g>` with `data-day`, `data-n`, `tabindex="0"` and a `<title>` ("Сб, 18 окт: 7 человек" / "Sat, 18 Oct: 7 people", with the right plural) so keyboard and screen readers work; the SVG has `role="img"` removed and instead `aria-label` on a wrapping `<figure>` with a `<figcaption>` holding the facts line.
+   - Under the chart, `chartFacts`: "В среднем 2 человека в день · больше всего 7 — 18 окт" / "On average 2 people a day · peak 7 on 18 Oct" (average rounded to one decimal when under 10, else to an integer; plurals agree; peak is the latest day with the highest count). With all zeros: "За период посещений нет" / "No visits in this period".
+2. **Tooltip** (`app.js`, `#tip` in `index.html`): on pointer over or focus of a bar, show a small card above it — weekday and date on the first line, "7 человек" on the second — positioned with `tip.style.setProperty('--x', …)` / `--y` (CSSOM only, no `style=`), hidden on pointer leave / blur / Escape. On touch, tapping a bar shows it; tapping elsewhere hides it. The hovered bar gets a highlight class (slightly darker), other bars stay.
+3. **Card sparkline** (`sparkline`): `viewBox="0 0 240 56"`, a soft area under the line filled with a vertical gradient of the site colour (opacity 0.25 at top to 0 at bottom; gradient ids unique per host, e.g. `g-rusinternet-com`), a 2-unit line with round joins, and a 3-unit dot on the last day. A single-day or all-zero series draws a flat line at the bottom with the dot, never nothing. Inside 4 units of padding so strokes are not clipped. Under it, a small muted caption: "последние 30 дней" / "last 30 days" (from the period).
+4. **Colours** stay the site colours from Task 5c; grid and labels use the existing muted tokens; everything works in light and dark themes.
+5. **No libraries, CSP unchanged:** inline SVG elements and presentation attributes (`fill`, `stroke`, `stop-color` via CSS classes or attributes) are fine; no `style=` attributes, no inline scripts.
+6. **Caching (from the Task 6 review):** in `deploy/server/Caddyfile`, replace the two `Cache-Control` matchers with one `Cache-Control "no-cache"` inside the site-level `header {}` block, so `index.html` is revalidated too.
+
+- [ ] **Step 1: Failing tests** — `tests/charts.test.mjs`:
+
+```js
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { T } from '../page/i18n.js';
+import * as R from '../page/render.js';
+
+const days = (counts, last = '2026-10-18') => counts.map((n, i) => {
+  const d = new Date(`${last}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - (counts.length - 1 - i));
+  return { day: d.toISOString().slice(0, 10), visits: n };
+});
+
+test('niceMax', () => {
+  assert.equal(R.niceMax(0), 1); assert.equal(R.niceMax(1), 1); assert.equal(R.niceMax(3), 5);
+  assert.equal(R.niceMax(7), 10); assert.equal(R.niceMax(12), 20); assert.equal(R.niceMax(51), 100);
+});
+
+test('day labels', () => {
+  assert.equal(R.dayLabel('2026-10-18', 'ru'), '18 окт');
+  assert.equal(R.dayLabel('2026-10-18', 'en'), '18 Oct');
+});
+
+test('chart: one bar group per day with data and a title', () => {
+  const svg = R.bars(days([0, 3, 7]), 'ru', 'rusinternet.com');
+  assert.equal((svg.match(/data-day="/g) || []).length, 3);
+  assert.ok(svg.includes('data-n="7"') && svg.includes('tabindex="0"'));
+  assert.ok(svg.includes('7 человек'));
+  assert.ok(!/\sstyle=/.test(svg));
+});
+
+test('chart: grid lines at 0, half and nice max with labels', () => {
+  const svg = R.bars(days([1, 7]), 'en', 'wystore.ru');
+  for (const v of ['>0<', '>5<', '>10<']) assert.ok(svg.includes(v), v);
+});
+
+test('chart: date labels thin out for longer periods', () => {
+  const count = (svg) => (svg.match(/class="xlabel"/g) || []).length;
+  assert.equal(count(R.bars(days(Array(7).fill(1)), 'en', 'washguide.ru')), 7);
+  assert.ok(count(R.bars(days(Array(30).fill(1)), 'en', 'washguide.ru')) <= 6);
+  assert.ok(count(R.bars(days(Array(90).fill(1)), 'en', 'washguide.ru')) <= 8);
+});
+
+test('facts line: average and peak, plurals agree', () => {
+  assert.equal(R.chartFacts(days([0, 3, 7, 7]), 'ru'), 'В среднем 4,3 человека в день · больше всего 7 — 18 окт');
+  assert.equal(R.chartFacts(days([0, 0]), 'en'), T.en.noVisitsPeriod);
+});
+
+test('sparkline: area, line and last-day dot even for one day', () => {
+  const one = R.sparkline(days([5]), 'rusinternet.com');
+  assert.ok(one.includes('<circle') && one.includes('<path'));
+  const many = R.sparkline(days([1, 2, 3]), 'wystore.ru');
+  assert.ok(many.includes('linearGradient') && many.includes('id="g-wystore-ru"'));
+});
+
+test('index.html has the tooltip element', async () => {
+  const html = await readFile(new URL('../page/index.html', import.meta.url), 'utf8');
+  assert.match(html, /id="tip"/);
+});
+
+test('page server sends no-cache site-wide', async () => {
+  const c = await readFile(new URL('../deploy/server/Caddyfile', import.meta.url), 'utf8');
+  assert.equal((c.match(/Cache-Control "no-cache"/g) || []).length, 1);
+  assert.ok(!/@assets|@data/.test(c));
+});
+```
+
+Note: "4,3" uses the Russian decimal comma (`Intl.NumberFormat('ru-RU')`), "4.3" in English. Add i18n keys in both languages: `avgLine` (with `{avg}`, `{people}`, `{peak}`, `{date}` placeholders), `noVisitsPeriod`, `lastDays` (`{days}`), weekday names via `Intl.DateTimeFormat` (no new keys needed).
+
+Run `node --test`: the new tests fail.
+
+- [ ] **Step 2: Implement** items 1–6. Keep `render.js` pure; tooltip logic only in `app.js`.
+
+- [ ] **Step 3: Run everything** — `node --test` and `python -W error -m unittest discover -s export/tests` all pass, pristine. Serve `page/` with sample data on a free port (8299), curl every asset for 200, stop the server. The controller checks the look in a browser.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add page tests deploy/server/Caddyfile
+git commit -m "feat(page): readable charts with axes, dates, tooltips and filled sparklines"
+```
+
+---
+
 ### Task 6: Server configuration files
 
 **Files:**
