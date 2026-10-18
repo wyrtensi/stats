@@ -54,3 +54,11 @@ test('collected block lists what is and is not kept', () => {
   for (const k of ['cPage', 'cReferrer', 'cCountry', 'cBrowser', 'cSystem', 'nCookies', 'nIp', 'nSize', 'nLanguage', 'nVisits'])
     assert.ok(html.includes(T.en[k]), k);
 });
+
+test('index.html loads only same-origin resources and no inline code', async () => {
+  const html = await readFile(new URL('../page/index.html', import.meta.url), 'utf8');
+  assert.ok(!/(src|href)="(https?:)?\/\//.test(html.replace(/<a [^>]*>/g, '')), 'no external src/href except links');
+  assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/.test(html), 'no inline scripts');
+  assert.ok(!/\sstyle=/.test(html), 'no style attributes');
+  assert.match(html, /<script type="module" src="\/app\.js"><\/script>/);
+});
