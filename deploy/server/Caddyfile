@@ -1,0 +1,20 @@
+# Static server for the public stats page inside stats-web. edge-caddy ends TLS.
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	root * /srv/current
+	encode zstd gzip
+	header {
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		# Browsers keep every file, index.html included, but revalidate it
+		# by ETag, so a deploy shows at once.
+		Cache-Control "no-cache"
+		-Server
+	}
+	file_server
+}

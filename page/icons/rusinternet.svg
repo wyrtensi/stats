@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Доступ в российский интернет</title>
+  <defs>
+    <clipPath id="globe"><circle cx="32" cy="32" r="24"/></clipPath>
+  </defs>
+  <circle cx="32" cy="32" r="29" fill="#edf3ff"/>
+  <g clip-path="url(#globe)">
+    <path fill="#fff" d="M8 8h48v16H8z"/>
+    <path fill="#1d4ed8" d="M8 24h48v16H8z"/>
+    <path fill="#dc2626" d="M8 40h48v16H8z"/>
+    <g fill="none" stroke="#172554" stroke-opacity=".28" stroke-width="1.25">
+      <ellipse cx="32" cy="32" rx="11" ry="24"/>
+      <path d="M32 8v48M9.5 23.5c12.5 4.2 32.5 4.2 45 0M8 32h48M9.5 40.5c12.5-4.2 32.5-4.2 45 0"/>
+    </g>
+  </g>
+  <circle cx="32" cy="32" r="24" fill="none" stroke="#fff" stroke-opacity=".72" stroke-width="1"/>
+  <circle cx="32" cy="32" r="26.5" fill="none" stroke="#b9c9e8" stroke-width="1"/>
+  <circle cx="32" cy="32" r="24" fill="none" stroke="#315ebd" stroke-width="2"/>
+</svg>

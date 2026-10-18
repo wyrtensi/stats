@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wyrtensi · stats</title>
+<meta name="description" content="Открытая статистика посещений rusinternet.com, wystore.ru и washguide.ru: без cookie и без IP-адресов.">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#">wyrtensi <span>· stats</span></a>
+  <div class="controls">
+    <div class="seg" id="period" role="group" aria-label="Период">
+      <button type="button" data-days="7">7 дней</button><span class="sep" aria-hidden="true">·</span><button type="button" data-days="30">30 дней</button><span class="sep" aria-hidden="true">·</span><button type="button" data-days="90">90 дней</button>
+    </div>
+    <button type="button" class="ghost" id="lang">English</button>
+    <button type="button" class="ghost" id="theme" aria-label="Theme">◐</button>
+  </div>
+</header>
+<main>
+  <div class="intro">
+    <p class="lead" id="lead"></p>
+    <p class="summary" id="summary" hidden></p>
+  </div>
+  <p class="error" id="error" hidden></p>
+  <section class="cards" id="overview"></section>
+  <section class="details" id="details" hidden></section>
+  <section class="collected" id="collected"></section>
+</main>
+<footer><p id="updated"></p></footer>
+<div class="tip" id="tip" aria-hidden="true" hidden><span class="tip-when"></span><span class="tip-n"></span></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
