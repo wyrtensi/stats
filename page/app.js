@@ -1,6 +1,6 @@
 // Wiring: load the period file, render, keep period/language/theme/site in sync.
 import { T, pickLang } from './i18n.js';
-import { overview, details, collected, updated, summary, daysText } from './render.js';
+import { overview, details, collected, updated, summary, daysText, weekdayLabel, peopleText } from './render.js';
 
 const $ = (id) => document.getElementById(id);
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -38,6 +38,7 @@ function currentHost() {
 
 function render() {
   const t = T[state.lang];
+  hideTip();
   document.documentElement.lang = state.lang;
   $('lead').textContent = t.lead;
   $('lang').textContent = t.lang;
@@ -67,6 +68,47 @@ function render() {
   for (const bar of document.querySelectorAll('.bar[data-w]')) bar.style.setProperty('--w', `${bar.dataset.w}%`);
   $('updated').innerHTML = updated(state.data.generated, new Date(), state.lang);
 }
+
+// Tooltip for the details chart: one #tip card, placed through CSS custom
+// properties above the hovered, focused or tapped bar.
+const tip = $('tip');
+let tipBar = null;
+function showTip(bar) {
+  if (tipBar === bar) return;
+  hideTip();
+  tipBar = bar;
+  bar.classList.add('on');
+  tip.querySelector('.tip-when').textContent = weekdayLabel(bar.dataset.day, state.lang);
+  tip.querySelector('.tip-n').textContent = peopleText(Number(bar.dataset.n), state.lang);
+  tip.hidden = false;
+  const r = (bar.querySelector('.b, .stub') ?? bar).getBoundingClientRect();
+  const half = tip.offsetWidth / 2, gap = 8;
+  const x = Math.min(Math.max(r.left + r.width / 2, half + gap), innerWidth - half - gap);
+  const below = r.top - tip.offsetHeight - 2 * gap < 0;
+  tip.classList.toggle('below', below);
+  tip.style.setProperty('--x', `${x.toFixed(1)}px`);
+  tip.style.setProperty('--y', `${(below ? r.bottom : r.top).toFixed(1)}px`);
+}
+function hideTip() {
+  tipBar?.classList.remove('on');
+  tipBar = null;
+  tip.hidden = true;
+}
+const barOf = (e) => e.target.closest?.('[data-day]') ?? null;
+document.addEventListener('pointerover', (e) => { if (e.pointerType === 'mouse' && barOf(e)) showTip(barOf(e)); });
+document.addEventListener('pointerout', (e) => {
+  if (e.pointerType === 'mouse' && barOf(e) && !barOf(e).contains(e.relatedTarget)) hideTip();
+});
+// Touch and pen: a tap on a bar shows it, a tap anywhere else hides it.
+document.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse') return;
+  if (barOf(e)) showTip(barOf(e)); else hideTip();
+});
+document.addEventListener('focusin', (e) => { if (barOf(e)) showTip(barOf(e)); });
+document.addEventListener('focusout', (e) => { if (barOf(e) === tipBar) hideTip(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideTip(); });
+addEventListener('scroll', hideTip, { passive: true });
+addEventListener('resize', hideTip);
 
 $('period').addEventListener('click', (e) => {
   const days = Number(e.target.closest?.('button[data-days]')?.dataset.days);

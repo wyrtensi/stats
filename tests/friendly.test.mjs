@@ -73,17 +73,18 @@ test('a site with no people but some robots shows the no-data line and the robot
   assert.ok(!html.includes('class="total"'));
 });
 
-test('daily chart: escaped, formatted titles, at most 80% high, first and last date', () => {
+test('daily chart: escaped, formatted titles, bars under the top grid line, first and last date', () => {
   const daily = [{ day: '2026-10-17', visits: 1500 }, { day: '<x>', visits: 7 }, { day: '2026-10-18', visits: 3 }];
-  const html = R.bars(daily, 'ru');
-  assert.ok(html.includes('17 окт.'));
+  const html = R.bars(daily, 'ru', 'rusinternet.com');
+  assert.ok(html.includes('17 окт'));
   assert.ok(html.includes('1 500'));
   assert.ok(!html.includes('<x>'));
-  const h = Number(html.match(/viewBox="0 0 \d+ (\d+)"/)[1]);
-  const tallest = Math.max(...[...html.matchAll(/<rect class="b" [^>]*y="([\d.]+)"/g)].map((m) => h - Number(m[1])));
-  assert.ok(tallest <= h * 0.8 + 0.01, `${tallest} of ${h}`);
-  assert.match(html, /class="axis"><span>17 окт\.<\/span><span>18 окт\.<\/span>/);
-  assert.equal(R.bars([], 'ru'), '');
+  const gridTop = Math.min(...[...html.matchAll(/<line class="grid" [^>]*y1="([\d.]+)"/g)].map((m) => Number(m[1])));
+  const highest = Math.min(...[...html.matchAll(/<rect class="b" [^>]*y="([\d.]+)"/g)].map((m) => Number(m[1])));
+  assert.ok(highest >= gridTop - 0.01, `${highest} above ${gridTop}`);
+  assert.match(html, /class="xlabel"[^>]*>17 окт<\/text>/);
+  assert.match(html, /class="xlabel"[^>]*>18 окт<\/text>/);
+  assert.equal(R.bars([], 'ru', 'rusinternet.com'), '');
 });
 
 test('collected block matches the counter settings', () => {

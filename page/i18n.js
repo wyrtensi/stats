@@ -26,6 +26,8 @@ export const T = {
     summaryOnly: 'Каждый просмотр хранится отдельно, но здесь показана только сводка.',
     counterNote: 'Счётчик — GoatCounter на нашем сервере.', source: 'Исходный код страницы',
     updated: 'Обновлено', stale: 'данные могут быть устаревшими', loadError: 'Не удалось загрузить данные.',
+    chartLabel: 'Посещения по дням', avgLine: 'В среднем {avg} {people} в день · больше всего {peak} — {date}',
+    noVisitsPeriod: 'За период посещений нет', lastDays: 'последние {days}',
     back: '← Все сайты', theme: 'Тема', lang: 'English'
   },
   en: {
@@ -54,6 +56,8 @@ export const T = {
     summaryOnly: 'Each view is stored separately, but this page shows only the summary.',
     counterNote: 'The counter is GoatCounter on our own server.', source: 'Source code of this page',
     updated: 'Updated', stale: 'the data may be stale', loadError: 'Could not load the data.',
+    chartLabel: 'Visits by day', avgLine: 'On average {avg} {people} a day · peak {peak} on {date}',
+    noVisitsPeriod: 'No visits in this period', lastDays: 'last {days}',
     back: '← All sites', theme: 'Theme', lang: 'Русский'
   }
 };
@@ -67,10 +71,12 @@ export function pickLang(navLang, saved) {
 }
 
 // Word form for a count. Russian: 1, 21, 101 -> one; 2-4, 22-24 -> few;
-// 11-14 and the rest -> many. English: 1 -> one, everything else -> many.
+// 11-14 and the rest -> many; a fraction (4,3) -> few. English: 1 -> one,
+// everything else -> many.
 export function plural(n, one, few, many, lang = 'ru') {
   const a = Math.abs(n);
   if (lang !== 'ru') return a === 1 ? one : many;
+  if (!Number.isInteger(a)) return few;
   const d = a % 10, h = a % 100;
   if (d === 1 && h !== 11) return one;
   if (d >= 2 && d <= 4 && (h < 12 || h > 14)) return few;

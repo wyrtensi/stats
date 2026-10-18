@@ -33,10 +33,36 @@ export function pct(n, total) {
   return p < 1 ? '<1%' : `${Math.round(p)}%`;
 }
 
-function dateText(day, lang) {
+const locale = (lang) => (lang === 'ru' ? 'ru-RU' : 'en-GB');
+const dateOf = (day) => {
   const at = /^\d{4}-\d{2}-\d{2}$/.test(String(day)) ? new Date(`${day}T00:00:00Z`) : null;
-  if (!at || Number.isNaN(at.getTime())) return String(day);
-  return new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(at);
+  return at && !Number.isNaN(at.getTime()) ? at : null;
+};
+
+// "18 окт" / "18 Oct": the UTC date without the abbreviation dot. Anything
+// that is not a YYYY-MM-DD date comes back as is (callers escape it).
+export function dayLabel(day, lang) {
+  const at = dateOf(day);
+  if (!at) return String(day);
+  const parts = new Intl.DateTimeFormat(locale(lang), { day: 'numeric', month: 'short', timeZone: 'UTC' }).formatToParts(at);
+  const part = (type) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('day')} ${part('month').replace(/\.$/, '')}`;
+}
+
+// "Сб, 18 окт" / "Sat, 18 Oct": the first line of a bar's title and tooltip.
+export function weekdayLabel(day, lang) {
+  const at = dateOf(day);
+  if (!at) return String(day);
+  const wd = new Intl.DateTimeFormat(locale(lang), { weekday: 'short', timeZone: 'UTC' }).format(at).replace(/\.$/, '');
+  return `${wd.charAt(0).toUpperCase()}${wd.slice(1)}, ${dayLabel(day, lang)}`;
+}
+
+// Smallest of 1, 2, 5 x 10^k that is >= max; the chart's top grid line.
+export function niceMax(max) {
+  if (!(max > 0)) return 1;
+  for (let k = 10 ** Math.floor(Math.log10(max)); ; k *= 10) {
+    for (const m of [1, 2, 5]) if (m * k >= max) return m * k;
+  }
 }
 
 // Plain text, not HTML: app.js sets it with textContent.
@@ -51,32 +77,80 @@ export function summary(data, lang) {
     .replace('{site}', () => busiest.host);
 }
 
-export function sparkline(daily, w = 120, h = 32) {
-  const box = `class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"`;
-  if (!daily.length) return `<svg ${box}></svg>`;
-  const max = Math.max(1, ...daily.map((d) => d.visits));
-  const step = daily.length > 1 ? w / (daily.length - 1) : 0;
-  const pts = daily.map((d, i) => `${(i * step).toFixed(1)},${(h - 3 - (d.visits / max) * (h - 6)).toFixed(1)}`).join(' ');
-  return `<svg ${box}><polyline points="${pts}" vector-effect="non-scaling-stroke"/></svg>`;
+const svgId = (prefix, host) => `${prefix}-${String(host).replace(/[^a-z0-9]/gi, '-')}`;
+
+// Card chart: a line over a soft gradient area, with a dot on the last day.
+// A single day or an all-zero series is a flat line at the bottom, never nothing.
+export function sparkline(daily, host) {
+  const W = 240, H = 56, P = 4, bottom = H - P;
+  const id = svgId('g', host);
+  const max = Math.max(0, ...daily.map((d) => d.visits || 0));
+  const flat = daily.length < 2 || !max;
+  const step = flat ? 0 : (W - 2 * P) / (daily.length - 1);
+  const pts = flat ? [[P, bottom], [W - P, bottom]]
+    : daily.map((d, i) => [P + i * step, bottom - ((d.visits || 0) / max) * (bottom - P)]);
+  const xy = ([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`;
+  const line = `M${pts.map(xy).join('L')}`;
+  const area = `${line}L${xy([W - P, bottom])}L${xy([P, bottom])}Z`;
+  const [lx, ly] = pts[pts.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true">`
+    + `<defs><linearGradient id="${esc(id)}" x1="0" y1="0" x2="0" y2="1">`
+    + '<stop offset="0" stop-opacity="0.25"/><stop offset="1" stop-opacity="0"/></linearGradient></defs>'
+    + `<path class="area" d="${area}" fill="url(#${esc(id)})"/><path class="line" d="${line}"/>`
+    + `<circle class="dot" cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3"/></svg>`;
 }
 
-// Daily bars, at most 80% of the chart high. The rect reaches past the bottom
-// edge by its corner radius, so only the top corners show rounded.
-export function bars(daily, lang, w = 640, h = 160) {
+// The line under the details chart: average per day and the busiest day
+// (the latest one when several tie).
+export function chartFacts(daily, lang) {
+  const t = T[lang];
+  const total = daily.reduce((sum, d) => sum + (d.visits || 0), 0);
+  if (!total) return t.noVisitsPeriod;
+  const avg = total / daily.length;
+  const shown = avg >= 10 ? Math.round(avg) : Math.round(avg * 10) / 10 || Math.round(avg * 100) / 100;
+  const peak = daily.reduce((a, d) => ((d.visits || 0) >= (a.visits || 0) ? d : a));
+  return t.avgLine.replace('{avg}', () => fmt(shown, lang))
+    .replace('{people}', () => plural(shown, t.peopleOne, t.peopleFew, t.peopleMany, lang))
+    .replace('{peak}', () => fmt(peak.visits, lang)).replace('{date}', () => dayLabel(peak.day, lang));
+}
+
+// Every day, every 7th or every 14th, counted back from the last day.
+const labelStep = (n) => (n <= 7 ? 1 : n <= 30 ? 7 : 14);
+
+// Details chart: one bar per day over three grid lines (0, half, nice max),
+// thinned-out dates below. Fixed viewBox; CSS scales it to the full width.
+// Bars reach past the baseline by their corner radius and are clipped there,
+// so only the top corners show rounded.
+export function bars(daily, lang, host) {
   if (!daily.length) return '';
-  const max = Math.max(1, ...daily.map((d) => d.visits));
-  const bw = w / daily.length;
-  const r = Math.min(4, Math.max(0, (bw - 2) / 2));
-  const cols = daily.map((d, i) => {
-    const bh = (d.visits / max) * h * 0.8;
-    const x = (i * bw + 1).toFixed(1), width = Math.max(1, bw - 2).toFixed(1);
-    const title = `${dateText(d.day, lang)}: ${peopleText(d.visits, lang)}`;
-    return `<g><title>${esc(title)}</title><rect class="hit" x="${(i * bw).toFixed(1)}" y="0" width="${bw.toFixed(1)}" height="${h}"/>`
-      + `<rect class="b" x="${x}" y="${(h - bh).toFixed(1)}" width="${width}" height="${(bh + r).toFixed(1)}" rx="${r.toFixed(1)}"/></g>`;
+  const t = T[lang];
+  const L = 34, TOP = 12, PW = 680, PH = 170, base = TOP + PH, R = 3;
+  const top = niceMax(Math.max(0, ...daily.map((d) => d.visits || 0)));
+  const clip = svgId('c', host);
+  const slot = PW / daily.length, bw = slot * 0.7;
+  const grid = [0, top / 2, top].map((v) => {
+    const y = (base - (v / top) * PH).toFixed(1);
+    return `<line class="grid" x1="${L}" x2="${L + PW}" y1="${y}" y2="${y}"/>`
+      + `<text class="ylabel" x="${L - 6}" y="${y}" dy="0.32em">${fmt(v, lang)}</text>`;
   }).join('');
-  const first = dateText(daily[0].day, lang), last = dateText(daily[daily.length - 1].day, lang);
-  const axis = daily.length > 1 ? `<span>${esc(first)}</span><span>${esc(last)}</span>` : `<span>${esc(first)}</span>`;
-  return `<div class="chart"><svg class="bars" viewBox="0 0 ${w} ${h}" role="img">${cols}</svg><div class="axis">${axis}</div></div>`;
+  const step = labelStep(daily.length);
+  const cols = [], labels = [];
+  daily.forEach((d, i) => {
+    const n = d.visits || 0;
+    const x = L + i * slot, cx = (x + slot / 2).toFixed(1);
+    const title = `${weekdayLabel(d.day, lang)}: ${peopleText(n, lang)}`;
+    const h = (n / top) * PH;
+    const mark = n
+      ? `<rect class="b" x="${(x + slot * 0.15).toFixed(1)}" y="${(base - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${(h + R).toFixed(1)}" rx="${Math.min(R, bw / 2).toFixed(1)}"/>`
+      : `<rect class="stub" x="${(x + slot * 0.15).toFixed(1)}" y="${base - 2}" width="${bw.toFixed(1)}" height="2"/>`;
+    cols.push(`<g data-day="${esc(d.day)}" data-n="${n}" tabindex="0"><title>${esc(title)}</title>`
+      + `<rect class="hit" x="${x.toFixed(1)}" y="${TOP}" width="${slot.toFixed(1)}" height="${PH}"/>${mark}</g>`);
+    if ((daily.length - 1 - i) % step === 0) labels.push(`<text class="xlabel" x="${cx}" y="${base + 20}">${esc(dayLabel(d.day, lang))}</text>`);
+  });
+  return `<figure class="chart" aria-label="${esc(t.chartLabel)}">`
+    + `<svg class="bars" viewBox="0 0 720 220"><defs><clipPath id="${esc(clip)}"><rect x="${L}" y="0" width="${PW}" height="${base}"/></clipPath></defs>`
+    + `${grid}<g class="cols" clip-path="url(#${esc(clip)})">${cols.join('')}</g>${labels.join('')}</svg>`
+    + `<figcaption>${esc(chartFacts(daily, lang))}</figcaption></figure>`;
 }
 
 // One list: heading, plain hint, rows with count and share of `total`.
@@ -125,7 +199,8 @@ export function overview(data, lang) {
   ${desc ? `<span class="about">${desc}</span>` : ''}
   <span class="count"><span class="big">${fmt(s.visits, lang)}</span> <span class="unit">${plural(s.visits, t.peopleOne, t.peopleFew, t.peopleMany, lang)}</span></span>
   ${bots ? `<span class="bots">${botsText(bots, lang)}</span>` : ''}
-  ${sparkline(s.daily)}
+  ${sparkline(s.daily, s.host)}
+  <span class="spark-cap">${t.lastDays.replace('{days}', () => daysText(data.period?.days ?? s.daily.length, lang))}</span>
   <span class="more">${t.more}</span>
 </a>`;
   }).join('');
@@ -158,7 +233,7 @@ export function details(site, app, lang) {
   if (site.visits) {
     const of = (title, hint, items, extra = {}) => list({ title, hint, items, total: site.visits, lang, ...extra });
     body = `<p class="total"><span class="big">${fmt(site.visits, lang)}</span> ${plural(site.visits, t.peopleOne, t.peopleFew, t.peopleMany, lang)}</p>
-${bars(site.daily, lang)}
+${bars(site.daily, lang, site.host)}
 ${appHtml}
 <div class="lists">
 ${of(t.pages, t.hintPages, site.pages.map((p) => ({ ...p, name: p.path })), { label: (p) => (p.title ? `${p.path} — ${p.title}` : p.path) })}
