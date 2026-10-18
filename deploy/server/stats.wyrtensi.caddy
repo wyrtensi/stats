@@ -1,0 +1,17 @@
+# Lives in /opt/edge/sites/. Public stats page; GoatCounter's own dashboard and
+# API stay under /admin. The sites send counts through their own /stats/count.
+stats.wyrtensi.ru {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	@admin path /admin /admin/*
+	handle @admin {
+		reverse_proxy goatcounter:8080
+	}
+
+	handle {
+		reverse_proxy stats-web:80
+	}
+}

@@ -1,0 +1,9 @@
+[Unit]
+Description=Export visit statistics for stats.wyrtensi.ru
+After=docker.service
+
+[Service]
+Type=oneshot
+# Through edge-caddy on this same server; the token never leaves the machine.
+ExecStart=/usr/bin/python3 /usr/local/bin/stats-export --out /opt/stats/page/data --token-file /etc/stats/token --state /opt/stats/state/bots.json --base https://stats.wyrtensi.ru/admin
+Nice=10
