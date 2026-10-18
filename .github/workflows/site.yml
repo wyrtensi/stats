@@ -1,0 +1,80 @@
+name: Site
+
+# Tests the exporter and the page, deploys page/ as a new release on our server
+# behind the shared Caddy, then checks the live page. Server pieces in
+# deploy/server/ are installed by hand.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test exporter and page
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+      - name: Exporter tests
+        run: python3 -m unittest discover -s export/tests -v
+      - name: Page and deploy tests
+        run: node --test
+      - name: Upload page
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: page
+          path: page
+          retention-days: 7
+
+  deploy:
+    name: Deploy to the server
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://stats.wyrtensi.ru/
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: page
+          path: page
+      - name: Upload and activate the release
+        env:
+          DEPLOY_KEY: ${{ secrets.STATS_DEPLOY_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          release="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          ssh_command="ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          rsync -rlt --chmod=D755,F644 --exclude data -e "$ssh_command" page/ "stdeploy@$DEPLOY_HOST:$release/"
+          $ssh_command "stdeploy@$DEPLOY_HOST" "activate $release"
+          rm -f ~/.ssh/deploy_key
+
+  smoke:
+    name: Check the live page
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+      - run: node .github/scripts/smoke.mjs
