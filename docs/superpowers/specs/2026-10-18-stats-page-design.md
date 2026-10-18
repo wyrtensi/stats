@@ -105,7 +105,16 @@ One file per period, `data/7.json`, `data/30.json`, `data/90.json`:
       "browsers": [{ "name": "Chrome", "visits": 700 }],
       "systems": [{ "name": "Android", "visits": 600 }]
     }
-  ]
+  ],
+  "app": {
+    "site": "wystore.ru",
+    "repo": "wyrtensi/wystore",
+    "latest": { "version": "v0.4.1", "published": "2026-10-18", "downloads": 120,
+                "url": "https://github.com/wyrtensi/wystore/releases/tag/v0.4.1" },
+    "total_downloads": 3400,
+    "releases": 12,
+    "fetched": "2026-10-18T16:10:00Z"
+  }
 }
 ```
 
@@ -119,6 +128,16 @@ One file per period, `data/7.json`, `data/30.json`, `data/90.json`:
 - "visits" is the count the GoatCounter API returns for these endpoints, the
   same number the stock dashboard shows as visits (unique per 8-hour session).
 - Paths that match no site (stray or test counts) are left out.
+- `app` (Wy Store downloads) comes from the public GitHub API,
+  `GET https://api.github.com/repos/wyrtensi/wystore/releases?per_page=100`
+  (all pages), without a token: six calls an hour stay far below the
+  unauthenticated limit of 60. Drafts and pre-releases are skipped. `latest` is
+  the newest published release; `downloads` counts its `.apk` assets;
+  `total_downloads` sums the `.apk` assets of every release. Downloads are not
+  limited to the period: GitHub only gives running totals.
+- If the GitHub call fails, the exporter keeps the previous `app` block (read
+  from the old file) instead of failing the whole run; the page shows the time
+  it was last fetched (`app.fetched`).
 
 ## Page
 
@@ -129,6 +148,10 @@ One file per period, `data/7.json`, `data/30.json`, `data/90.json`:
 - **Details:** clicking a card (or `#rusinternet.com` in the URL) shows that
   site: a daily bar chart, top pages, referrers, countries, browsers, systems.
   Each list is a simple table with proportional bars.
+- **Wy Store app:** the wystore.ru card and its details also show the app:
+  latest version with its release date (linked to the release), downloads of
+  that version, and downloads of all versions, labelled "all time" because
+  GitHub has no per-period numbers.
 - **What we collect:** a fixed block listing what is kept (page, referrer,
   country, browser, system) and what is not (cookies, IP addresses, screen
   size, language, individual visits), with a link to GoatCounter's source.
@@ -175,7 +198,8 @@ numbers. Colors are CSS custom properties with a dark-mode override.
 
 - Exporter: unit tests with recorded API responses (`export/tests/`): path to
   site mapping, prefix cut, top-10 plus "other", atomic write, failure keeps
-  old files.
+  old files, release sums (drafts, pre-releases and non-APK assets skipped),
+  GitHub failure keeps the previous `app` block.
 - Page: a Node test (no dependencies) that loads a sample JSON and checks the
   rendered sections and numbers; a check that `index.html` has no external URLs
   and that all scripts are same-origin.
