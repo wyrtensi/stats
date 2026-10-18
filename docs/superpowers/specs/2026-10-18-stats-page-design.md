@@ -139,15 +139,50 @@ One file per period, `data/7.json`, `data/30.json`, `data/90.json`:
   from the old file) instead of failing the whole run; the page shows the time
   it was last fetched (`app.fetched`).
 
+## Bots
+
+GoatCounter counts people only: bots rarely run JavaScript, and GoatCounter
+drops the ones that do. Bots are counted separately from edge-caddy's access
+logs, which already exist for the three sites.
+
+- Each run, the exporter reads new log lines with
+  `docker logs --timestamps --since <last> edge-caddy` (Caddy writes to stderr;
+  both streams are read). It remembers the last timestamp in
+  `/opt/stats/state/bots.json`.
+- A line counts when its `request.host` is one of the three sites (not `www.`)
+  and its User-Agent matches a known bot. Known bots are a fixed table of
+  name, category (`search`, `ai`, `other`) and pattern: Googlebot, YandexBot,
+  bingbot, DuckDuckBot, Applebot, Baiduspider, PetalBot as `search`; GPTBot,
+  OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-User, Claude-SearchBot,
+  PerplexityBot, Perplexity-User, CCBot, Bytespider, meta-externalagent,
+  Amazonbot as `ai`; anything else whose User-Agent contains bot, crawl,
+  spider, slurp, scan, curl, wget, python, go-http-client, headless, or is
+  empty, as one "other bots" entry in `other`. Lines from people are ignored.
+- Kept: per day, per site, per bot name, the number of requests. No IP
+  addresses, paths, User-Agent strings or log lines are kept. Days older than
+  90 are dropped.
+- The period files get `site.bots`:
+  `{"requests": 5678, "list": [{"name": "YandexBot", "category": "search", "visits": 1400}]}`
+  (`visits` here is the request count, so the list renders like the others;
+  top 10 plus "other").
+- If reading the logs fails, the run keeps the previous state and the rest of
+  the export still happens.
+- Logs rotate at 2 x 5 MB; at today's traffic that is days of lines, far more
+  than 10 minutes. Under a heavy burst some lines may rotate out before they
+  are read: the count can be low, never invented.
+- The "What we collect" block adds one line: for bots, only the bot's name and
+  the number of requests.
+
 ## Page
 
 - **Header:** "wyrtensi · stats", a one-line explanation, period switch
   (7 / 30 / 90 days, default 30), language switch (RU / EN), theme switch.
-- **Overview:** three cards, one per site: name, visits for the period and a
-  sparkline of daily visits.
+- **Overview:** three cards, one per site: name, people (visits) for the
+  period, bot requests for the period, and a sparkline of daily visits.
 - **Details:** clicking a card (or `#rusinternet.com` in the URL) shows that
-  site: a daily bar chart, top pages, referrers, countries, browsers, systems.
-  Each list is a simple table with proportional bars.
+  site: a daily bar chart, top pages, referrers, countries, browsers, systems,
+  and bots (with a search / AI / other label). Each list is a simple table with
+  proportional bars.
 - **Wy Store app:** the wystore.ru card and its details also show the app:
   latest version with its release date (linked to the release), downloads of
   that version, and downloads of all versions, labelled "all time" because
