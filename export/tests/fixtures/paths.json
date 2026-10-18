@@ -1,0 +1,29 @@
+{
+  "paths": [
+    {
+      "id": 1,
+      "path": "/rusinternet.com",
+      "title": "Сертификаты Минцифры — убрать ошибку «не защищено»",
+      "event": false
+    },
+    {
+      "id": 2,
+      "path": "/wystore.ru/en",
+      "title": "Wy Store – Russian apps, with nobody watching what you install",
+      "event": false
+    },
+    {
+      "id": 3,
+      "path": "/washguide.ru",
+      "title": "Старая стиралка — Как пользоваться старыми стиральными машинами с непонятной панелью",
+      "event": false
+    },
+    {
+      "id": 4,
+      "path": "/washguide.ru/m/beko-wm-3350-e",
+      "title": "Beko WM 3350 E: как пользоваться, программы, панель — Старая стиралка",
+      "event": false
+    }
+  ],
+  "more": false
+}

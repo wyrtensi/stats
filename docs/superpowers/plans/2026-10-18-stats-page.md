@@ -23,6 +23,8 @@ Spec: `docs/superpowers/specs/2026-10-18-stats-page-design.md`.
 - edge-caddy has admin off: route changes need `docker exec edge-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` and then `docker restart edge-caddy` (about 2 s for all sites). If validate fails, put the old file back before any restart.
 - Commits as `wyrtensi <wyrtensi@gmail.com>`, English messages, no Claude attribution, no emoji.
 - Bots: only bot name and request count per site per day are kept (`/opt/stats/state/bots.json`, 90 days); never IPs, paths, User-Agent strings or log lines.
+- GoatCounter API limits: 4 calls a second and 500 an hour per key; the exporter paces calls (0.3 s) and retries HTTP 429 up to 3 times.
+- The API key lives only in `/etc/stats/token` (root, 0600); it is named `read_key` in GoatCounter and has only "Read statistics". Task 1 Step 1 is already done this way: the 2.7.0 CLI cannot grant that permission.
 - Memory budget: stats-web `mem_limit: 32m`; goatcounter stays `96m`.
 
 ## File Structure
@@ -388,6 +390,7 @@ Append to `export/stats_export.py`:
 import argparse
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -408,10 +411,18 @@ class Api:
         if self.host:
             headers["Host"] = self.host
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=20) as r:
-            body = json.load(r)
-        time.sleep(0.2)  # stay well below GoatCounter's API rate limit
-        return body
+        # GoatCounter allows 4 API calls a second and 500 an hour per key; one
+        # run makes about 55. Pace the calls and retry a 429 a few times.
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    body = json.load(r)
+                time.sleep(0.3)
+                return body
+            except urllib.error.HTTPError as err:
+                if err.code != 429 or attempt == 3:
+                    raise
+                time.sleep(2 * (attempt + 1))
 
 
 def iso(dt):
