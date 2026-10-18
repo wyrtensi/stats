@@ -1598,6 +1598,78 @@ git commit -m "feat(page): plain-language, friendlier stats page with languages"
 
 ---
 
+### Task 5d: Site icons, robot-request plurals, one "unknown" row
+
+The operator asked for each service's icon on the stats page. Also fixes two
+things seen after Task 5c: "1 запросов" in the robots line, and two separate
+"unknown" rows when the API returns both `""` and `"(unknown)"`.
+
+**Files:**
+- Add (already in the working tree, untracked): `page/icons/rusinternet.svg` (the site's own favicon), `page/icons/wystore.png` (Wy Store app icon, 96x96), `page/icons/washguide.svg` (the site's own favicon)
+- Modify: `page/render.js`, `page/i18n.js`, `page/style.css`
+- Test: `tests/friendly.test.mjs` (or a new `tests/icons.test.mjs`)
+
+**Interfaces:**
+- Consumes: `SITE_INFO`, `overview`, `details`, `list`, `plural`, `T` (Task 5c).
+- Produces: `SITE_INFO[host].icon` — `'/icons/rusinternet.svg'`, `'/icons/wystore.png'`, `'/icons/washguide.svg'`.
+
+- [ ] **Step 1: Failing tests**
+
+```js
+test('each card and the details title show the site icon', () => {
+  const html = R.overview(data, 'ru');
+  for (const [host, icon] of [['rusinternet.com', '/icons/rusinternet.svg'], ['wystore.ru', '/icons/wystore.png'], ['washguide.ru', '/icons/washguide.svg']]) {
+    assert.ok(html.includes(`src="${icon}"`), host);
+  }
+  assert.ok(R.details(data.sites[0], null, 'ru').includes('src="/icons/rusinternet.svg"'));
+  assert.match(html, /<img class="site-icon" src="\/icons\/rusinternet\.svg" alt="" width="28" height="28">/);
+});
+
+test('robots line agrees with the number', () => {
+  const one = structuredClone(data); one.sites[0].bots = { requests: 1, list: [] };
+  const two = structuredClone(data); two.sites[0].bots = { requests: 2, list: [] };
+  assert.ok(R.overview(one, 'ru').includes('1 запрос от'));
+  assert.ok(R.overview(two, 'ru').includes('2 запроса от'));
+  assert.ok(R.overview(data, 'ru').includes('57 запросов от'));
+  assert.ok(R.overview(one, 'en').includes('1 request from'));
+});
+
+test('empty, "unknown" and "(unknown)" names become one unknown row', () => {
+  const site = structuredClone(data.sites[0]);
+  site.languages = [{ name: 'Russian', visits: 10 }, { name: '', visits: 2 }, { name: '(unknown)', visits: 1 }, { name: 'unknown', visits: 1 }];
+  const html = R.details(site, null, 'ru');
+  assert.equal(html.split(`>${T.ru.unknown}<`).length - 1, 1);
+  assert.match(html, /4 · 33%/);
+});
+```
+
+Run `node --test`: these fail.
+
+- [ ] **Step 2: Implement**
+
+- `SITE_INFO` gets `icon` for each host (values above).
+- Cards: replace the colour dot before the host with `<img class="site-icon" src="${icon}" alt="" width="28" height="28">`; keep the site colour for the sparkline and the chart. Details title: the same image, `width="36" height="36"`, class `site-icon site-icon-lg`.
+- CSS: `.site-icon{border-radius:8px;flex:none;vertical-align:middle}` and `.site-icon-lg{border-radius:10px}`; the host row is a flex row with an 10px gap.
+- i18n: replace `botsLine` with `botsOne`, `botsFew`, `botsMany`:
+  - ru: `'и {n} запрос от роботов поисковиков и ИИ'`, `'и {n} запроса от роботов поисковиков и ИИ'`, `'и {n} запросов от роботов поисковиков и ИИ'`
+  - en: `'and {n} request from search and AI robots'`, `'and {n} requests from search and AI robots'`, `'and {n} requests from search and AI robots'`
+  and pick with `plural`.
+- `list`: before ranking, merge entries whose display name is "unknown" (`""` outside referrers, `"unknown"`, `"(unknown)"`) into one entry with the summed count; an empty referrer stays "direct". Shares are computed after merging.
+- No other changes. CSP, escaping and purity rules as before; the icons are same-origin files, so `img-src 'self'` covers them.
+
+- [ ] **Step 3: Run everything**
+
+`node --test` and `python -W error -m unittest discover -s export/tests`: all pass, pristine. Serve `page/` with sample data and confirm with curl that `/icons/rusinternet.svg`, `/icons/wystore.png`, `/icons/washguide.svg` answer 200 with `image/svg+xml` / `image/png`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add page/icons page/render.js page/i18n.js page/style.css tests
+git commit -m "feat(page): site icons, agreeing robot-request plurals, one unknown row"
+```
+
+---
+
 ### Task 6: Server configuration files
 
 **Files:**
