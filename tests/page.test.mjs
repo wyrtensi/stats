@@ -29,7 +29,7 @@ test('details escape data and show every list', () => {
   const html = R.details(data.sites[0], data.app, 'en');
   assert.ok(!html.includes('<b>Android</b>'));
   assert.ok(html.includes('&lt;b&gt;Android&lt;/b&gt;'));
-  for (const k of ['pages', 'referrers', 'countries', 'browsers', 'systems']) assert.ok(html.includes(T.en[k]), k);
+  for (const k of ['pages', 'referrers', 'countries', 'languages', 'browsers', 'systems']) assert.ok(html.includes(T.en[k]), k);
   assert.ok(html.includes(T.en.other));
 });
 
@@ -51,7 +51,7 @@ test('stale note after 30 minutes', () => {
 
 test('collected block lists what is and is not kept', () => {
   const html = R.collected('en');
-  for (const k of ['cPage', 'cReferrer', 'cCountry', 'cBrowser', 'cSystem', 'nCookies', 'nIp', 'nSize', 'nLanguage', 'nVisits'])
+  for (const k of ['cPage', 'cTime', 'cReferrer', 'cCountry', 'cLanguage', 'cBrowser', 'cSystem', 'nCookies', 'nIp', 'nSize'])
     assert.ok(html.includes(T.en[k]), k);
 });
 

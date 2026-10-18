@@ -14,15 +14,18 @@
 <header class="top">
   <a class="brand" href="#">wyrtensi <span>· stats</span></a>
   <div class="controls">
-    <div class="seg" id="period" role="group">
-      <button type="button" data-days="7">7</button><button type="button" data-days="30">30</button><button type="button" data-days="90">90</button>
+    <div class="seg" id="period" role="group" aria-label="Период">
+      <button type="button" data-days="7">7 дней</button><span class="sep" aria-hidden="true">·</span><button type="button" data-days="30">30 дней</button><span class="sep" aria-hidden="true">·</span><button type="button" data-days="90">90 дней</button>
     </div>
     <button type="button" class="ghost" id="lang">English</button>
     <button type="button" class="ghost" id="theme" aria-label="Theme">◐</button>
   </div>
 </header>
 <main>
-  <p class="lead" id="lead"></p>
+  <div class="intro">
+    <p class="lead" id="lead"></p>
+    <p class="summary" id="summary" hidden></p>
+  </div>
   <p class="error" id="error" hidden></p>
   <section class="cards" id="overview"></section>
   <section class="details" id="details" hidden></section>
