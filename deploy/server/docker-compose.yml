@@ -1,7 +1,7 @@
 version: "2.4"
 
-# Lives in /opt/stats. GoatCounter counts for rusinternet.com, wystore.ru and
-# washguide.ru (one site, stats.wyrtensi.ru; paths carry the host in front) and
+# Lives in /opt/stats. GoatCounter counts for rusinternet.com, wystore.ru,
+# washguide.ru and wyrtensi.github.io/showmehow (one site, stats.wyrtensi.ru; paths carry the host in front) and
 # serves its own dashboard under /admin. stats-web serves the public page from
 # /opt/stats/page/current; /opt/stats/page/data is written by stats-export.
 # No published ports: edge-caddy proxies here over the "proxy" network.

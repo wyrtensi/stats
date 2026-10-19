@@ -97,6 +97,14 @@ class BotsForPeriod(unittest.TestCase):
             {"name": "YandexBot", "category": "search", "visits": 5}, {"name": "GPTBot", "category": "ai", "visits": 2}]})
         self.assertEqual(out["wystore.ru"], {"requests": 0, "list": []})
 
+    def test_site_without_edge_logs_has_empty_bots(self):
+        host = "wyrtensi.github.io/showmehow"
+        state = {"last": None, "days": {"2026-10-18": {"washguide.ru": {"GPTBot": 2}}}}
+        out = se.bots_for_period(state, 7, datetime(2026, 10, 18, 16, 7, tzinfo=timezone.utc))
+        self.assertEqual(out[host], {"requests": 0, "list": []})
+        self.assertEqual(se.bots_for_period({"last": None, "days": {}}, 30, datetime(2026, 10, 18, tzinfo=timezone.utc))[host],
+                         {"requests": 0, "list": []})
+
 
 class RunWithBots(unittest.TestCase):
     def test_bots_in_files_and_state_saved(self):

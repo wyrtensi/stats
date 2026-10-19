@@ -1,6 +1,7 @@
 # stats.wyrtensi.ru
 
-Public visit statistics for rusinternet.com, wystore.ru and washguide.ru, and
+Public visit statistics for rusinternet.com, wystore.ru, washguide.ru and
+wyrtensi.github.io/showmehow, and
 Wy Store's release downloads. No cookies, no IP addresses.
 
 - `page/` — the static page (no dependencies, no build step).

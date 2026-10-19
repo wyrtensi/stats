@@ -14,7 +14,7 @@ async function check() {
       const json = await data.json();
       const age = Date.now() - Date.parse(json.generated);
       if (!(age < 30 * 60 * 1000)) problems.push(`data: generated ${json.generated} is older than 30 minutes`);
-      if (json.sites?.length !== 3) problems.push('data: expected 3 sites');
+      if (json.sites?.length !== 4) problems.push('data: expected 4 sites');
     }
     const admin = await fetch(`${base}/admin/settings/main`, { redirect: 'manual' });
     if (admin.status < 300 || admin.status > 399) problems.push(`admin settings without login: HTTP ${admin.status}, expected a redirect`);

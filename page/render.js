@@ -5,12 +5,13 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 
 export const fmt = (n, lang) => new Intl.NumberFormat(lang === 'ru' ? 'ru-RU' : 'en-US').format(n);
 
-// Each site's colour is a data-color attribute that CSS maps to --site-1..3;
+// Each site's colour is a data-color attribute that CSS maps to --site-1..4;
 // `about` is the i18n key of the one-line description; `icon` is a same-origin file.
 export const SITE_INFO = {
   'rusinternet.com': { color: 'site-1', about: 'aboutRusinternet', icon: '/icons/rusinternet.svg' },
   'wystore.ru': { color: 'site-2', about: 'aboutWystore', icon: '/icons/wystore.png' },
-  'washguide.ru': { color: 'site-3', about: 'aboutWashguide', icon: '/icons/washguide.svg' }
+  'washguide.ru': { color: 'site-3', about: 'aboutWashguide', icon: '/icons/washguide.svg' },
+  'wyrtensi.github.io/showmehow': { color: 'site-4', about: 'aboutShowmehow', icon: '/icons/showmehow.svg' }
 };
 
 const info = (host) => (Object.hasOwn(SITE_INFO, host) ? SITE_INFO[host] : null);

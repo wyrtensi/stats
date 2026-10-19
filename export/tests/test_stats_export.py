@@ -11,6 +11,14 @@ class SiteOf(unittest.TestCase):
         self.assertEqual(se.site_of("/wystore.ru/en/"), ("wystore.ru", "/en/"))
         self.assertEqual(se.site_of("/rusinternet.com/install/android/"), ("rusinternet.com", "/install/android/"))
 
+    def test_project_site_host_with_a_slash(self):
+        host = "wyrtensi.github.io/showmehow"
+        self.assertIn(host, se.SITES)
+        self.assertEqual(se.site_of("/" + host), (host, "/"))
+        self.assertEqual(se.site_of("/" + host + "/guides/bike/"), (host, "/guides/bike/"))
+        self.assertIsNone(se.site_of("/" + host + "x/"))
+        self.assertIsNone(se.site_of("/wyrtensi.github.io/other/"))
+
     def test_other_paths(self):
         self.assertIsNone(se.site_of("/wystore.ruby/"))
         self.assertIsNone(se.site_of("/example.com/"))

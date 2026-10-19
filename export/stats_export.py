@@ -15,7 +15,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SITES = ("rusinternet.com", "wystore.ru", "washguide.ru")
+SITES = ("rusinternet.com", "wystore.ru", "washguide.ru", "wyrtensi.github.io/showmehow")
 
 
 def site_of(path):

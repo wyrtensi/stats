@@ -10,7 +10,7 @@ test('summary names the total and the busiest site, with Russian plurals', () =>
   const ru = R.summary(data, 'ru');
   assert.match(ru, /15 человек/);
   assert.ok(ru.includes('rusinternet.com'));
-  const one = structuredClone(data); one.sites = [{ ...data.sites[0], visits: 1 }, { ...data.sites[1], visits: 0 }, { ...data.sites[2], visits: 0 }];
+  const one = structuredClone(data); one.sites = [{ ...data.sites[0], visits: 1 }, { ...data.sites[1], visits: 0 }, { ...data.sites[2], visits: 0 }, { ...data.sites[3], visits: 0 }];
   // JS \b is ASCII-only, so it never matches after a Cyrillic letter; the
   // lookahead keeps the intent: "1 человек", not "1 человека".
   assert.match(R.summary(one, 'ru'), /1 человек(?![а-яё])/);
@@ -41,7 +41,7 @@ test('cards carry site colour, description and Details link', () => {
   assert.ok(html.includes(T.ru[R.SITE_INFO['wystore.ru'].about]));
   assert.ok(html.includes(T.ru.more));
   assert.match(html, /data-color="site-1"/);
-  assert.deepEqual(Object.values(R.SITE_INFO).map((s) => s.color), ['site-1', 'site-2', 'site-3']);
+  assert.deepEqual(Object.values(R.SITE_INFO).map((s) => s.color), ['site-1', 'site-2', 'site-3', 'site-4']);
   assert.ok(html.includes(T.ru.botsMany.replace('{n}', '57')));
   assert.match(html, />3<\/span> <span class="unit">человека</);
 });
