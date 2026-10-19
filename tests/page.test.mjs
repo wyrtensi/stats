@@ -20,7 +20,7 @@ test('both languages define the same keys', () => {
 test('overview has one card per site in order, with visits', () => {
   const html = R.overview(data, 'en');
   const hosts = [...html.matchAll(/data-site="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(hosts, ['rusinternet.com', 'wystore.ru', 'washguide.ru']);
+  assert.deepEqual(hosts, ['rusinternet.com', 'wystore.ru', 'washguide.ru', 'wyrtensi.github.io/showmehow']);
   assert.match(html, /12/);
   assert.match(html, /<svg/);
 });
